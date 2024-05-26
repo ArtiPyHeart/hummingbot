@@ -1,0 +1,3 @@
+[submodule "extern/python-coincall"]
+	path = extern/python-coincall
+	url = https://github.com/Coincall-exchange/python-coincall.git
