@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List, Mapping, Optional, Any
+from typing import Any, Dict, List, Mapping, Optional
 
 import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
 import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_web_utils as web_utils
@@ -7,6 +7,7 @@ from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_derivat
 from hummingbot.core.data_type.funding_info import FundingInfo
 from hummingbot.core.data_type.order_book_message import OrderBookMessage
 from hummingbot.core.data_type.perpetual_api_order_book_data_source import PerpetualAPIOrderBookDataSource
+from hummingbot.core.web_assistant.connections.data_types import WSJSONRequest
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
 from hummingbot.core.web_assistant.ws_assistant import WSAssistant
 from hummingbot.logger import HummingbotLogger
@@ -46,10 +47,26 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         raise NotImplementedError
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
-        wss_url = web_utils.wss_url(CONSTANTS.WS_COMBINED_URL, self._domain)
+        ws_url = web_utils.wss_url(CONSTANTS.WS_COMBINED_URL, self._domain)
+        ws: WSAssistant = await self._api_factory.get_ws_assistant()
+        await ws.connect(ws_url)
+        return ws
 
     async def _subscribe_channels(self, ws: WSAssistant):
-        raise NotImplementedError
+        payload = {
+            "id": 1,
+            "method": "SUBSCRIBE",
+            "params": [],
+        }
+        for trading_pair in self._trading_pairs:
+            exchange_symbol = self._connector.exchange_symbol_associated_to_pair(trading_pair)
+            market_channel = f"{exchange_symbol}@market"
+            orderbook_channel = f"{exchange_symbol}@orderbook"
+            trade_channel = f"{exchange_symbol}@trade"
+            payload["params"].extend([market_channel, orderbook_channel, trade_channel])
+
+        await ws.send(WSJSONRequest(payload=payload))
+        self.logger().info(f"Subscribed: {'|'.join(payload['params'])}")
 
     def _channel_originating_message(self, event_message: Dict[str, Any]) -> str:
         raise NotImplementedError
