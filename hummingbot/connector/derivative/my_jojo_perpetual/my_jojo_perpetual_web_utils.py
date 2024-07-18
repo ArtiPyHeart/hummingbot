@@ -1,4 +1,5 @@
 from typing import Optional, Callable, Dict, Any
+from urllib.parse import urljoin
 
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
 from hummingbot.connector.utils import TimeSynchronizerRESTPreProcessor
@@ -15,24 +16,24 @@ class MyJojoPerpetualRESTPreProcessor(RESTPreProcessorBase):
     async def pre_process(self, request: RESTRequest) -> RESTRequest:
         if request.headers is None:
             request.headers = {}
-        if request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
-            request.headers["Content-Type"] = "application/x-www-form-urlencoded"
+        # if request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
+        #     request.headers["Content-Type"] = "application/x-www-form-urlencoded"
         return request
 
 
 def public_rest_url(path_url: str, domain: str = "my_jojo_perpetual"):
     base_url = CONSTANTS.PERPETUAL_BASE_URL if domain == "my_jojo_perpetual" else CONSTANTS.TESTNET_BASE_URL
-    return base_url + path_url
+    return urljoin(base_url, path_url)
 
 
 def private_rest_url(path_url: str, domain: str = "my_jojo_perpetual"):
     base_url = CONSTANTS.PERPETUAL_BASE_URL if domain == "my_jojo_perpetual" else CONSTANTS.TESTNET_BASE_URL
-    return base_url + path_url
+    return urljoin(base_url, path_url)
 
 
 def wss_url(endpoint: str, domain: str = "my_jojo_perpetual"):
     base_ws_url = CONSTANTS.PERPETUAL_WS_URL if domain == "my_jojo_perpetual" else CONSTANTS.TESTNET_WS_URL
-    return base_ws_url + endpoint
+    return urljoin(base_ws_url, endpoint)
 
 
 def create_throttler() -> AsyncThrottler:

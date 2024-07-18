@@ -1,10 +1,14 @@
 import asyncio
-from typing import Dict, List, Mapping, Optional
+from typing import Dict, List, Mapping, Optional, Any
 
 import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
+import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_web_utils as web_utils
 from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_derivative import MyJojoPerpetualDerivative
+from hummingbot.core.data_type.funding_info import FundingInfo
+from hummingbot.core.data_type.order_book_message import OrderBookMessage
 from hummingbot.core.data_type.perpetual_api_order_book_data_source import PerpetualAPIOrderBookDataSource
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
+from hummingbot.core.web_assistant.ws_assistant import WSAssistant
 from hummingbot.logger import HummingbotLogger
 
 
@@ -21,10 +25,49 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         domain: str = CONSTANTS.DOMAIN,
     ):
         super().__init__(trading_pairs)
-        self._connector = connector
-        self._api_factory = api_factory
+        self._connector: MyJojoPerpetualDerivative = connector
+        self._api_factory: WebAssistantsFactory = api_factory
         self._domain = domain
         self._trading_pairs: List[str] = trading_pairs
 
     async def get_last_traded_prices(self, trading_pairs: List[str], domain: Optional[str] = None) -> Dict[str, float]:
-        return await self._connector.get_last_traded_prices(trading_pairs=trading_pairs)
+        raise NotImplementedError
+
+    async def _parse_trade_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
+        raise NotImplementedError
+
+    async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
+        raise NotImplementedError
+
+    async def _parse_order_book_snapshot_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
+        raise NotImplementedError
+
+    async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
+        raise NotImplementedError
+
+    async def _connected_websocket_assistant(self) -> WSAssistant:
+        wss_url = web_utils.wss_url(CONSTANTS.WS_COMBINED_URL, self._domain)
+
+    async def _subscribe_channels(self, ws: WSAssistant):
+        raise NotImplementedError
+
+    def _channel_originating_message(self, event_message: Dict[str, Any]) -> str:
+        raise NotImplementedError
+
+    async def _process_message_for_unknown_channel(
+        self, event_message: Dict[str, Any], websocket_assistant: WSAssistant
+    ):
+        """
+        Processes a message coming from a not identified channel.
+        Does nothing by default but allows subclasses to reimplement
+
+        :param event_message: the event received through the websocket connection
+        :param websocket_assistant: the websocket connection to use to interact with the exchange
+        """
+        pass
+
+    async def get_funding_info(self, trading_pair: str) -> FundingInfo:
+        raise NotImplementedError
+
+    async def _parse_funding_info_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
+        raise NotImplementedError
