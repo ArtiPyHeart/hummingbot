@@ -1,15 +1,12 @@
 import binascii
-import time
+from typing import Any, Dict
 from urllib.parse import urlencode
-from typing import Dict, Any
-from web3.auto import w3
 
+import web3
+
+from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_utils import current_time_millis
 from hummingbot.core.web_assistant.auth import AuthBase
 from hummingbot.core.web_assistant.connections.data_types import RESTRequest, WSRequest
-
-
-def current_time_millis() -> int:
-    return time.perf_counter_ns() // 1000000
 
 
 class MyJojoPerpetualAuth(AuthBase):
@@ -18,27 +15,23 @@ class MyJojoPerpetualAuth(AuthBase):
         self._secret_key = secret_key
 
     async def rest_authenticate(self, request: RESTRequest) -> RESTRequest:
-        request.is_auth_required = True
-        if request.params is None:
+        if not request.params:
             request.params = {}
         request.params["timestamp"] = current_time_millis()
+        request.params["account"] = self._public_key
         request.params["signature"] = self.sign_message(request.params)
         return request
 
     async def ws_authenticate(self, request: WSRequest) -> WSRequest:
-        request.is_auth_required = True
-        if not hasattr(request, "payload"):
-            request.payload = {}
-        request.payload["timestamp"] = current_time_millis()
-        request.payload["signature"] = self.sign_message(request.payload)
+        # 需要在url中直接添加params
         return request
 
     def sign_message(self, raw_message: Dict[str, Any]) -> str:
         raw_message = dict(sorted(raw_message.items()))
         url_params = urlencode(raw_message)
         message = "\x19Ethereum Signed Message:\n{}{}".format(len(url_params), url_params)
-        message_hash = w3.keccak(text=message)
-        signed_message = w3.eth.account.signHash(message_hash, private_key=self._secret_key)
+        message_hash = web3.Web3.keccak(text=message)
+        signed_message = web3.Account.signHash(message_hash, private_key=self._secret_key)
         signature = signed_message.signature
         if signature[64] == 1:
             signature[64] = 28

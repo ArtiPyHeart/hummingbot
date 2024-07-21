@@ -1,21 +1,28 @@
 from decimal import Decimal
-from typing import Optional, List, TYPE_CHECKING, Dict, Any, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from bidict import bidict
 
+import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
 import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_web_utils as web_utils
 from hummingbot.connector.constants import s_decimal_NaN
+from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_api_order_book_data_source import (
+    MyJojoPerpetualAPIOrderBookDataSource,
+)
 from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_auth import MyJojoPerpetualAuth
+from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_user_stream_data_source import (
+    MyJojoPerpetualUserStreamDataSource,
+)
 from hummingbot.connector.perpetual_derivative_py_base import PerpetualDerivativePyBase
-import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
 from hummingbot.connector.trading_rule import TradingRule
 from hummingbot.connector.utils import combine_to_hb_trading_pair
 from hummingbot.core.api_throttler.data_types import RateLimit
-from hummingbot.core.data_type.common import OrderType, PositionMode, TradeType, PositionAction
+from hummingbot.core.data_type.common import OrderType, PositionAction, PositionMode, TradeType
 from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderUpdate, TradeUpdate
 from hummingbot.core.data_type.perpetual_api_order_book_data_source import PerpetualAPIOrderBookDataSource
 from hummingbot.core.data_type.trade_fee import TradeFeeBase
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
+from hummingbot.core.utils.estimate_fee import build_trade_fee
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
 
 if TYPE_CHECKING:
@@ -93,7 +100,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
 
     @property
     def funding_fee_poll_interval(self) -> int:
-        return 28800_000
+        return 28800
 
     def _initialize_trading_pair_symbols_from_exchange_info(self, exchange_info: Dict[str, Any]):
         try:
@@ -125,6 +132,30 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
     def _is_order_not_found_during_cancelation_error(self, cancelation_exception: Exception) -> bool:
         raise NotImplementedError
 
+    def _create_web_assistants_factory(self) -> WebAssistantsFactory:
+        web_assistants_factory = web_utils.build_api_factory(
+            throttler=self._throttler,
+            time_synchronizer=self._time_synchronizer,
+            domain=self.name,
+            auth=self.authenticator,
+        )
+        return web_assistants_factory
+
+    def _create_order_book_data_source(self) -> PerpetualAPIOrderBookDataSource:
+        source = MyJojoPerpetualAPIOrderBookDataSource(
+            trading_pairs=self.trading_pairs,
+            connector=self,
+            api_factory=self._web_assistants_factory,
+            domain=self.name,
+        )
+        return source
+
+    def _create_user_stream_data_source(self) -> UserStreamTrackerDataSource:
+        source = MyJojoPerpetualUserStreamDataSource(
+            self.authenticator, self.trading_pairs, self, self._web_assistants_factory, domain=self.name
+        )
+        return source
+
     async def _place_order(
         self,
         order_id: str,
@@ -139,6 +170,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         pass
 
     async def _update_positions(self):
+        pass
+
+    async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         pass
 
     async def _set_trading_pair_leverage(self, trading_pair: str, leverage: int) -> Tuple[bool, str]:
@@ -161,19 +195,42 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         price: Decimal = s_decimal_NaN,
         is_maker: Optional[bool] = None,
     ) -> TradeFeeBase:
-        pass
-
-    async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
-        pass
+        is_maker = is_maker or False
+        fee = build_trade_fee(
+            self.name,
+            is_maker,
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+            order_type=order_type,
+            order_side=order_side,
+            amount=amount,
+            price=price,
+        )
+        return fee
 
     async def _update_trading_fees(self):
-        pass
+        # 费用不会变化
+        return
 
     async def _user_stream_event_listener(self):
-        pass
+        async for event_message in self._iter_user_event_queue():
+            pass
 
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
-        pass
+        raw_info = exchange_info_dict["markets"]
+        trading_rules = []
+        for info in raw_info:
+            trading_pair = self.trading_pair_associated_to_exchange_symbol(info["symbol"])
+            filters = {v["filterType"]: v for v in info["filters"]}
+            trading_rule = TradingRule(
+                trading_pair,
+                min_price_increment=Decimal(filters["PRICE_FILTER"]["tickSize"]),
+                min_base_amount_increment=Decimal(filters["AMOUNT_FILTER"]["stepSize"]),
+                buy_order_collateral_token=info["baseAssetName"],
+                sell_order_collateral_token=info["baseAssetName"],
+            )
+            trading_rules.append(trading_rule)
+        return trading_rules
 
     async def _update_balances(self):
         pass
@@ -184,17 +241,10 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
     async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
         pass
 
-    def _create_web_assistants_factory(self) -> WebAssistantsFactory:
-        pass
-
-    def _create_user_stream_data_source(self) -> UserStreamTrackerDataSource:
-        pass
+    def get_buy_collateral_token(self, trading_pair: str) -> str:
+        trading_rule: TradingRule = self._trading_rules[trading_pair]
+        return trading_rule.buy_order_collateral_token
 
     def get_sell_collateral_token(self, trading_pair: str) -> str:
-        pass
-
-    def get_buy_collateral_token(self, trading_pair: str) -> str:
-        pass
-
-    def _create_order_book_data_source(self) -> PerpetualAPIOrderBookDataSource:
-        pass
+        trading_rule: TradingRule = self._trading_rules[trading_pair]
+        return trading_rule.sell_order_collateral_token

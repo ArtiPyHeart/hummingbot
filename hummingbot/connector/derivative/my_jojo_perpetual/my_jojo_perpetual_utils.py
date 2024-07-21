@@ -1,3 +1,4 @@
+import time
 from decimal import Decimal
 
 from pydantic import Field, SecretStr
@@ -7,13 +8,17 @@ from hummingbot.core.data_type.trade_fee import TradeFeeSchema
 
 # https://api.base-mainnet.jojo.exchange/v1/exchangeInfo
 DEFAULT_FEES = TradeFeeSchema(
-    maker_percent_fee_decimal=Decimal("0"),
+    maker_percent_fee_decimal=Decimal("-0.0001"),
     taker_percent_fee_decimal=Decimal("0.0003"),
 )
 
 CENTRALIZED = False
 
 EXAMPLE_PAIR = "btcusdc"
+
+
+def current_time_millis() -> int:
+    return int(time.time() * 1000)
 
 
 class MyJojoPerpetualConfigMap(BaseConnectorConfigMap):

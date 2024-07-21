@@ -1,13 +1,13 @@
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 from urllib.parse import urljoin
 
+import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
 from hummingbot.connector.utils import TimeSynchronizerRESTPreProcessor
 from hummingbot.core.api_throttler.async_throttler import AsyncThrottler
 from hummingbot.core.web_assistant.auth import AuthBase
-from hummingbot.core.web_assistant.connections.data_types import RESTRequest, RESTMethod
+from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest
 from hummingbot.core.web_assistant.rest_pre_processors import RESTPreProcessorBase
-import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
 
 
@@ -59,6 +59,17 @@ async def get_current_server_time(
     )
     server_time = response["serverTime"]
     return server_time
+
+
+async def get_exchange_info(domain: str = CONSTANTS.DOMAIN) -> Dict[str, Any]:
+    api_factory = build_api_factory()
+    rest_assistant = await api_factory.get_rest_assistant()
+    response = await rest_assistant.execute_request(
+        url=public_rest_url(path_url=CONSTANTS.EXCHANGE_INFO_URL, domain=domain),
+        method=RESTMethod.GET,
+        throttler_limit_id=CONSTANTS.RATE_LIMITS[0],
+    )
+    return response
 
 
 def build_api_factory(
