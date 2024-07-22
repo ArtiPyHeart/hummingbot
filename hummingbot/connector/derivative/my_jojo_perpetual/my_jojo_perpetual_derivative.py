@@ -169,9 +169,6 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
     ) -> Tuple[str, float]:
         pass
 
-    async def _update_positions(self):
-        pass
-
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         pass
 
@@ -216,6 +213,12 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         async for event_message in self._iter_user_event_queue():
             pass
 
+    async def _update_positions(self):
+        pass
+
+    async def _update_balances(self):
+        pass
+
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
         raw_info = exchange_info_dict["markets"]
         trading_rules = []
@@ -231,9 +234,6 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             )
             trading_rules.append(trading_rule)
         return trading_rules
-
-    async def _update_balances(self):
-        pass
 
     async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
         pass
