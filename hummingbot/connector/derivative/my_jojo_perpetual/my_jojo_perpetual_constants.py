@@ -1,8 +1,37 @@
+from enum import Enum
+
 from hummingbot.core.api_throttler.data_types import RateLimit
 
 EXCHANGE_NAME = "my_jojo_perpetual"
 BROKER_ID = "HBOT"
 MAX_ORDER_ID_LEN = None
+
+CURRENCY = "USDC"
+
+
+class OrderStatus(Enum):
+    CREATED = "CREATED"
+    NEW = "NEW"
+    FILLED = "FILLED"
+    FAILED = "FAILED"
+    CANCELED = "CANCELED"
+    EXPIRED = "EXPIRED"
+    PARTIAL_FILLED = "PARTIAL_FILLED"
+
+
+class TradeTypes(Enum):
+    PENDING = "PENDING"
+    FAILED = "FAILED"
+    SETTLED = "SETTLED"
+
+
+class TimeInForce(Enum):
+    GTC = "GTC"  # Good till cancelled
+    FOK = "FOK"  # Fill or kill
+    IOC = "IOC"  # Immediate or cancel
+    GTT = "GTT"  # Good till time
+    POST_ONLY = "POST_ONLY"
+
 
 DOMAIN = "my_jojo_perpetual"
 TESTNET_DOMAIN = "my_jojo_perpetual_testnet"

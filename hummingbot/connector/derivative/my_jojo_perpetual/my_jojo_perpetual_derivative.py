@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -13,11 +14,12 @@ from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_auth im
 from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_user_stream_data_source import (
     MyJojoPerpetualUserStreamDataSource,
 )
+from hummingbot.connector.derivative.position import Position
 from hummingbot.connector.perpetual_derivative_py_base import PerpetualDerivativePyBase
 from hummingbot.connector.trading_rule import TradingRule
 from hummingbot.connector.utils import combine_to_hb_trading_pair
 from hummingbot.core.api_throttler.data_types import RateLimit
-from hummingbot.core.data_type.common import OrderType, PositionAction, PositionMode, TradeType
+from hummingbot.core.data_type.common import OrderType, PositionAction, PositionMode, PositionSide, TradeType
 from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderUpdate, TradeUpdate
 from hummingbot.core.data_type.perpetual_api_order_book_data_source import PerpetualAPIOrderBookDataSource
 from hummingbot.core.data_type.trade_fee import TradeFeeBase
@@ -47,8 +49,13 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         self._domain = domain
         self._public_key = public_key
         self._private_key = private_key
+        self._lock = asyncio.Lock()
 
         super().__init__(client_config_map=client_config_map)
+
+        self._raw_balances_websocket = None
+        self._raw_positions_websocket = None
+        self._raw_funding_fees_websocket: Dict[str, Decimal] = {}
 
     @property
     def name(self) -> str:
@@ -173,10 +180,10 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         pass
 
     async def _set_trading_pair_leverage(self, trading_pair: str, leverage: int) -> Tuple[bool, str]:
-        pass
+        return True, ""
 
     async def _trading_pair_position_mode_set(self, mode: PositionMode, trading_pair: str) -> Tuple[bool, str]:
-        pass
+        return True, ""
 
     async def _fetch_last_fee_payment(self, trading_pair: str) -> Tuple[float, Decimal, Decimal]:
         pass
@@ -192,7 +199,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         price: Decimal = s_decimal_NaN,
         is_maker: Optional[bool] = None,
     ) -> TradeFeeBase:
-        is_maker = is_maker or False
+        is_maker = True if is_maker else False
         fee = build_trade_fee(
             self.name,
             is_maker,
@@ -211,13 +218,53 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
 
     async def _user_stream_event_listener(self):
         async for event_message in self._iter_user_event_queue():
-            pass
-
-    async def _update_positions(self):
-        pass
+            if "event" in event_message:
+                if event_message["event"] == "ACCOUNT_UPDATE":
+                    async with self._lock:
+                        self._raw_balances_websocket = event_message["balances"]
+                        self._raw_positions_websocket = event_message["positions"]
+                elif event_message["event"] == "INCOME_UPDATE":
+                    pass
+                elif event_message["event"] == "ORDER_UPDATE":
+                    pass
+                elif event_message["event"] == "TRADE_UPDATE":
+                    pass
+                elif event_message["event"] == "DEGEN_ACCOUNT_STATE_UPDATE":
+                    pass
+                else:
+                    self.logger().warning(f"Unrecognized user stream event: {event_message = }")
+            else:
+                return
 
     async def _update_balances(self):
-        pass
+        async with self._lock:
+            self._account_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["netValue"])
+            self._account_available_balances[CONSTANTS.CURRENCY] = Decimal(
+                self._raw_balances_websocket["availableMargin"]
+            )
+
+    async def _update_positions(self):
+        async with self._lock:
+            leverage = Decimal(self._raw_balances_websocket["leverage"])
+            for p_info in self._raw_positions_websocket:
+                trading_pair = self.trading_pair_associated_to_exchange_symbol(p_info["symbol"])
+                position_side = PositionSide.LONG if p_info["side"] == "LONG" else PositionSide.SHORT
+                pos_key = self._perpetual_trading.position_key(trading_pair, position_side)
+                if p_info["status"] == "OPEN":
+                    unrealized_pnl = Decimal(p_info["unrealizedPnl"])
+                    entry_price = Decimal(p_info["entryPrice"])
+                    amount = Decimal(p_info["size"])
+                    _position = Position(
+                        trading_pair=pos_key,
+                        position_side=position_side,
+                        unrealized_pnl=unrealized_pnl,
+                        entry_price=entry_price,
+                        amount=amount,
+                        leverage=leverage,
+                    )
+                    self._perpetual_trading.set_position(pos_key, _position)
+                else:
+                    self._perpetual_trading.remove_position(pos_key)
 
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
         raw_info = exchange_info_dict["markets"]
@@ -228,7 +275,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             trading_rule = TradingRule(
                 trading_pair,
                 min_price_increment=Decimal(filters["PRICE_FILTER"]["tickSize"]),
-                min_base_amount_increment=Decimal(filters["AMOUNT_FILTER"]["stepSize"]),
+                min_base_amount_increment=Decimal(filters["AMOUNT_FILTER"]["minAmount"]),
                 buy_order_collateral_token=info["baseAssetName"],
                 sell_order_collateral_token=info["baseAssetName"],
             )
