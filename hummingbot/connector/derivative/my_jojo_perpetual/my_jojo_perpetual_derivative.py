@@ -224,7 +224,12 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                         self._raw_balances_websocket = event_message["balances"]
                         self._raw_positions_websocket = event_message["positions"]
                 elif event_message["event"] == "INCOME_UPDATE":
-                    pass
+                    async with self._lock:
+                        incomes = event_message["incomes"]
+                        for income in incomes:
+                            trading_pair = await self.trading_pair_associated_to_exchange_symbol(income["marketId"])
+                            if income["type"] == "FUNDING_FEE":
+                                self._raw_funding_fees_websocket[trading_pair] = Decimal(income["amount"])
                 elif event_message["event"] == "ORDER_UPDATE":
                     pass
                 elif event_message["event"] == "TRADE_UPDATE":
@@ -247,7 +252,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         async with self._lock:
             leverage = Decimal(self._raw_balances_websocket["leverage"])
             for p_info in self._raw_positions_websocket:
-                trading_pair = self.trading_pair_associated_to_exchange_symbol(p_info["symbol"])
+                trading_pair = await self.trading_pair_associated_to_exchange_symbol(p_info["symbol"])
                 position_side = PositionSide.LONG if p_info["side"] == "LONG" else PositionSide.SHORT
                 pos_key = self._perpetual_trading.position_key(trading_pair, position_side)
                 if p_info["status"] == "OPEN":
@@ -270,7 +275,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         raw_info = exchange_info_dict["markets"]
         trading_rules = []
         for info in raw_info:
-            trading_pair = self.trading_pair_associated_to_exchange_symbol(info["symbol"])
+            trading_pair = await self.trading_pair_associated_to_exchange_symbol(info["symbol"])
             filters = {v["filterType"]: v for v in info["filters"]}
             trading_rule = TradingRule(
                 trading_pair,
