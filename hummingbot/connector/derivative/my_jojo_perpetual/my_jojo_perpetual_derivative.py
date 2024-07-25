@@ -192,6 +192,16 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         order_type = "LIMIT" if order_type is OrderType.LIMIT else "MARKET"
         amount = str(amount)
         price = str(price)
+        request_params = {
+            "marketId": exchange_symbol,
+            "side": side,
+            "orderType": order_type,
+            "amount": amount,
+            "price": price,
+            "timeInForce": time_in_force.value,
+            "account": self._auth.public_key,
+            "timestamp": int(self._time_synchronizer.time() * 1000),
+        }
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         pass

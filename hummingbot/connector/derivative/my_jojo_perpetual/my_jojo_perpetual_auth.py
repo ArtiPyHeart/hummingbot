@@ -13,6 +13,14 @@ class MyJojoPerpetualAuth(AuthBase):
         self._public_key = public_key
         self._secret_key = secret_key
 
+    @property
+    def public_key(self) -> str:
+        return self._public_key
+
+    @property
+    def secret_key(self) -> str:
+        return self._secret_key
+
     async def rest_authenticate(self, request: RESTRequest) -> RESTRequest:
         if not request.params:
             request.params = {}
