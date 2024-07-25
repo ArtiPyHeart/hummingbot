@@ -1,5 +1,4 @@
 import binascii
-from typing import Any, Dict
 from urllib.parse import urlencode
 
 import web3
@@ -19,15 +18,15 @@ class MyJojoPerpetualAuth(AuthBase):
             request.params = {}
         request.params["timestamp"] = current_time_millis()
         request.params["account"] = self._public_key
-        request.params["signature"] = self.sign_message(request.params)
+        request.params["signature"] = self.sign_message(**request.params)
         return request
 
     async def ws_authenticate(self, request: WSRequest) -> WSRequest:
         # 需要在url中直接添加params
         return request
 
-    def sign_message(self, raw_message: Dict[str, Any]) -> str:
-        raw_message = dict(sorted(raw_message.items()))
+    def sign_message(self, **kwargs) -> str:
+        raw_message = dict(sorted(kwargs.items()))
         url_params = urlencode(raw_message)
         message = "\x19Ethereum Signed Message:\n{}{}".format(len(url_params), url_params)
         message_hash = web3.Web3.keccak(text=message)

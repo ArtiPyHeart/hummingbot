@@ -40,7 +40,7 @@ class MyJojoPerpetualUserStreamDataSource(UserStreamTrackerDataSource):
         url /= f"account@{account}"
         timestamp = current_time_millis()
         url.args["timestamp"] = timestamp
-        sign = self._auth.sign_message({"account": account, "timestamp": timestamp})
+        sign = self._auth.sign_message(**{"account": account, "timestamp": timestamp})
         url.args["signature"] = sign
         await ws.connect(url.url)
         return ws

@@ -21,6 +21,12 @@ def current_time_millis() -> int:
     return int(time.time() * 1000)
 
 
+def get_expiry_timestamp_in_millis(seconds: int) -> int:
+    # must greater than 1 minute and less than 7 day
+    seconds = min(max(60, seconds), 604800)
+    return current_time_millis() + seconds * 1000
+
+
 class MyJojoPerpetualConfigMap(BaseConnectorConfigMap):
     connector: str = Field(default="my_jojo_perpetual", client_data=None)
     my_jojo_perpetual_api_secret: SecretStr = Field(

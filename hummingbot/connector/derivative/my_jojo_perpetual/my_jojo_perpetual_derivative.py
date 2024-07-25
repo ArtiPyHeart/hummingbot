@@ -55,7 +55,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
 
         self._raw_balances_websocket = None
         self._raw_positions_websocket = None
-        self._raw_funding_fees_websocket: Dict[str, Decimal] = {}
+        self._raw_funding_fees_websocket: Dict[str, Dict[str, Any]] = {}
 
     @property
     def name(self) -> str:
@@ -176,6 +176,23 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
     ) -> Tuple[str, float]:
         pass
 
+    async def _build_order(
+        self,
+        trading_pair: str,
+        trade_type: TradeType,
+        order_type: OrderType,
+        amount: Decimal,
+        price: Decimal,
+        time_in_force: CONSTANTS.TimeInForce,
+        expiration: Optional[int] = None,
+    ):
+        full_url = web_utils.private_rest_url(CONSTANTS.ORDER_BUILD_URL, domain=self.name)
+        exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
+        side = "BUY" if trade_type is TradeType.BUY else "SELL"
+        order_type = "LIMIT" if order_type is OrderType.LIMIT else "MARKET"
+        amount = str(amount)
+        price = str(price)
+
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         pass
 
@@ -229,7 +246,18 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                         for income in incomes:
                             trading_pair = await self.trading_pair_associated_to_exchange_symbol(income["marketId"])
                             if income["type"] == "FUNDING_FEE":
-                                self._raw_funding_fees_websocket[trading_pair] = Decimal(income["amount"])
+                                old_funding_fee = self._raw_funding_fees_websocket.get(trading_pair, None)
+                                if old_funding_fee["time"] < income["time"] or old_funding_fee is None:
+                                    """
+                                    income = {
+                                        "id": 1289,
+                                        "type": "FUNDING_FEE",
+                                        "amount": "-17.032035",
+                                        "time": 1656000030678,
+                                        "marketId": "btcusdc"
+                                    }
+                                    """
+                                    self._raw_funding_fees_websocket[trading_pair] = income
                 elif event_message["event"] == "ORDER_UPDATE":
                     pass
                 elif event_message["event"] == "TRADE_UPDATE":
