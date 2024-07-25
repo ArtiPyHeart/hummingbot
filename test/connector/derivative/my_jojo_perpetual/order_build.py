@@ -1,23 +1,21 @@
+from decimal import Decimal
+from pprint import pprint
+from test.connector.derivative.my_jojo_perpetual.rest_api import PRIVATE_KEY, PUBLIC_KEY
 from urllib.parse import urljoin
 
 import requests
-from pprint import pprint
 
 from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_auth import MyJojoPerpetualAuth
 from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants import (
     ORDER_BUILD_URL,
+    ORDER_URL,
     PERPETUAL_BASE_URL,
     TimeInForce,
 )
-from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_utils import (
-    current_time_millis,
-    get_expiry_timestamp_in_millis,
-)
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
-from test.connector.derivative.my_jojo_perpetual.rest_api import PUBLIC_KEY, PRIVATE_KEY
 
-auth = MyJojoPerpetualAuth(PUBLIC_KEY, PRIVATE_KEY)
 time_sync = TimeSynchronizer()
+auth = MyJojoPerpetualAuth(PUBLIC_KEY, PRIVATE_KEY, time_sync)
 
 if __name__ == "__main__":
     url = urljoin(PERPETUAL_BASE_URL, ORDER_BUILD_URL)
@@ -26,14 +24,35 @@ if __name__ == "__main__":
         "marketId": "ethusdc",
         "side": "BUY",
         "orderType": "LIMIT",
-        "amount": "0.02",
-        "price": "2000",
-        "timeInForce": TimeInForce.GTT.value,
-        "expiration": current_time + 60_1000,  # 结束时间，毫秒时间戳
+        "amount": Decimal("0.02"),
+        "price": Decimal("2000"),
+        "timeInForce": TimeInForce.GTC.value,
         "account": PUBLIC_KEY,
         "timestamp": current_time,
     }
     params["signature"] = auth.sign_message(**params)
     response = requests.post(url, data=params)
     print(response.status_code)
-    pprint(response.json())
+    build_info = response.json()
+    pprint(build_info)
+
+    order_url = urljoin(PERPETUAL_BASE_URL, ORDER_URL)
+    request_params = {
+        "marketId": "ethusdc",
+        "side": "BUY",
+        "orderType": "LIMIT",
+        "amount": Decimal("0.02"),
+        "price": Decimal("2000"),
+        "timeInForce": TimeInForce.GTC.value,
+        "info": build_info["order"]["info"],
+        "gasFeeQuotation": build_info["gasFeeQuotation"],
+        "orderHash": build_info["orderHash"],
+        "account": PUBLIC_KEY,
+        "timestamp": current_time,
+    }
+    # FIXME: The orderSignature is not correct
+    request_params["orderSignature"] = auth.sign_order(build_info["orderHash"])
+    response = requests.post(order_url, data=request_params)
+    print(response.status_code)
+    order_info = response.json()
+    pprint(order_info)

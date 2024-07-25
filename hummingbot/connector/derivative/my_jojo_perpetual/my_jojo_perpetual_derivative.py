@@ -63,7 +63,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
 
     @property
     def authenticator(self) -> MyJojoPerpetualAuth:
-        return MyJojoPerpetualAuth(self._public_key, self._private_key)
+        return MyJojoPerpetualAuth(self._public_key, self._private_key, self._time_synchronizer)
 
     @property
     def rate_limits_rules(self) -> List[RateLimit]:
@@ -128,7 +128,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return [OrderType.LIMIT, OrderType.MARKET]
 
     def supported_position_modes(self):
-        return [PositionMode.ONEWAY, PositionMode.HEDGE]
+        return [PositionMode.ONEWAY]
 
     def _is_request_exception_related_to_time_synchronizer(self, request_exception: Exception):
         return False
@@ -174,24 +174,21 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         position_action: PositionAction = PositionAction.NIL,
         **kwargs,
     ) -> Tuple[str, float]:
-        pass
-
-    async def _build_order(
-        self,
-        trading_pair: str,
-        trade_type: TradeType,
-        order_type: OrderType,
-        amount: Decimal,
-        price: Decimal,
-        time_in_force: CONSTANTS.TimeInForce,
-        expiration: Optional[int] = None,
-    ):
-        full_url = web_utils.private_rest_url(CONSTANTS.ORDER_BUILD_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
+        time_in_force = kwargs.get("time_in_force", CONSTANTS.TimeInForce.GTC)
+        expiration = kwargs.get("expiration", None)
         side = "BUY" if trade_type is TradeType.BUY else "SELL"
         order_type = "LIMIT" if order_type is OrderType.LIMIT else "MARKET"
-        amount = str(amount)
-        price = str(price)
+        build_info = await self._build_order(
+            exchange_symbol=exchange_symbol,
+            side=side,
+            order_type=order_type,
+            amount=amount,
+            price=price,
+            time_in_force=time_in_force,
+            expiration=expiration,
+        )
+        order_url = web_utils.private_rest_url(CONSTANTS.ORDER_URL, domain=self.name)
         request_params = {
             "marketId": exchange_symbol,
             "side": side,
@@ -199,9 +196,58 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             "amount": amount,
             "price": price,
             "timeInForce": time_in_force.value,
-            "account": self._auth.public_key,
-            "timestamp": int(self._time_synchronizer.time() * 1000),
+            "orderSignature": build_info["orderHash"],
+            "info": build_info["order"]["info"],
+            "gasFeeQuotation": build_info["gasFeeQuotation"],
         }
+        if time_in_force == CONSTANTS.TimeInForce.GTT:
+            if expiration is None:
+                request_params["timeInForce"] = CONSTANTS.TimeInForce.GTC
+            else:
+                request_params["expiration"] = expiration
+        response = await self._api_post(path_url=order_url, data=request_params, is_auth_required=True)
+        order_id = response["id"]
+        order_time = response["createdAt"] / 1000
+        return order_id, order_time
+
+    async def _build_order(
+        self,
+        exchange_symbol: str,
+        side: str,
+        order_type: str,
+        amount: Decimal,
+        price: Decimal,
+        time_in_force: CONSTANTS.TimeInForce = CONSTANTS.TimeInForce.GTC,
+        expiration: Optional[int] = None,
+    ):
+        full_url = web_utils.private_rest_url(CONSTANTS.ORDER_BUILD_URL, domain=self.name)
+        request_params = {
+            "marketId": exchange_symbol,
+            "side": side,
+            "orderType": order_type,
+            "amount": amount,
+            "price": price,
+            "timeInForce": time_in_force.value,
+        }
+        if time_in_force == CONSTANTS.TimeInForce.GTT:
+            if expiration is None:
+                request_params["timeInForce"] = CONSTANTS.TimeInForce.GTC
+            else:
+                request_params["expiration"] = expiration
+        response = await self._api_post(path_url=full_url, data=request_params, is_auth_required=True)
+        """
+        {'gasFeeQuotation': 'some hash',
+         'order': {'creditAmount': '-40000000',
+                   'info': '0xhash',
+                   'paperAmount': '20000000000000000',
+                   'perp': '0xhash',
+                   'sender': '0x0',
+                   'singer': 'wallet address'},
+         'orderHash': 'some hash',
+         'packedOrder': 'some hash',
+         }
+        """
+        return response
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         pass
