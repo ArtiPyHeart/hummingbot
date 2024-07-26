@@ -36,6 +36,13 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         self._trading_pairs: List[str] = trading_pairs
 
         self._latest_order_book_snapshots: Dict[str, OrderBookMessage] = {}
+        self._latest_funding_info: Dict[str, FundingInfo] = {}
+
+    async def _connected_websocket_assistant(self) -> WSAssistant:
+        ws_url = web_utils.wss_url(CONSTANTS.WS_COMBINED_URL, self._domain)
+        ws: WSAssistant = await self._api_factory.get_ws_assistant()
+        await ws.connect(ws_url)
+        return ws
 
     async def get_last_traded_prices(self, trading_pairs: List[str], domain: Optional[str] = None) -> Dict[str, float]:
         tasks = [self._get_last_traded_price_for_single_pair(trading_pair, domain) for trading_pair in trading_pairs]
@@ -48,12 +55,6 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         params = {"marketId": exchange_symbol, "limit": 1}
         raw_response = self._connector._api_get(url, params=params)
         return float(raw_response[0]["price"])
-
-    async def _connected_websocket_assistant(self) -> WSAssistant:
-        ws_url = web_utils.wss_url(CONSTANTS.WS_COMBINED_URL, self._domain)
-        ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url)
-        return ws
 
     async def _subscribe_channels(self, ws: WSAssistant):
         payload = {
@@ -71,25 +72,21 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         await ws.send(WSJSONRequest(payload=payload))
         self.logger().info(f"Subscribed: {'|'.join(payload['params'])}")
 
-    async def _parse_trade_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
+    async def _parse_funding_info_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         """
-        Received: {"stream":"btcusdc@trades","data":{"id":200299297171968,"price":"66657.35","amount":"0.184159","quoteAmount":"12275.55091865","time":1721461195599,"isBuyerMaker":false,"status":"CREATED"}}
+        {"stream":"btcusdc@market","data":{"fundingRate":"0.0001","nextFundingTime":1721318400000,"markPrice":"63957.19635104","offchainMarkPrice":"63933.32516509","offchainMarkPrice24HAgo":"64984.01218979","indexPrice":"63975.45818013","liquidationThreshold":"0.01","liquidationPriceOff":"0.005","24hVolume":"359.875166","24hQuoteVolume":"23224862.2791608","openInterest":"17.9197695","price24HAgo":"64928.02","lastTradePrice":"63910.73"}}
         """
         exchange_symbol = raw_message["stream"].split("@")[0]
         trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(exchange_symbol)
-
-        trade_message: OrderBookMessage = OrderBookMessage(
-            OrderBookMessageType.TRADE,
-            {
-                "trading_pair": trading_pair,
-                "trade_id": raw_message["data"]["id"],
-                "price": float(raw_message["data"]["price"]),
-                "amount": float(raw_message["data"]["amount"]),
-                "trade_type": TradeType.BUY if raw_message["data"]["isBuyerMaker"] else TradeType.SELL,
-            },
-            timestamp=raw_message["data"]["time"] / 1000,
+        funding_raw_data = raw_message["data"]
+        funding_info: FundingInfo = FundingInfo(
+            trading_pair=trading_pair,
+            index_price=Decimal(funding_raw_data["indexPrice"]),
+            mark_price=Decimal(funding_raw_data["markPrice"]),
+            next_funding_utc_timestamp=int(funding_raw_data["nextFundingTime"]),
+            rate=Decimal(funding_raw_data["fundingRate"]),
         )
-        message_queue.put_nowait(trade_message)
+        message_queue.put_nowait(funding_info)
 
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         """
@@ -121,19 +118,25 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         )
         message_queue.put_nowait(order_book_message)
 
-    async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
-        while True:
-            try:
-                order_book_snapshot: OrderBookMessage = await self._message_queue[
-                    self._snapshot_messages_queue_key
-                ].get()
-                if (
-                    order_book_snapshot.trading_pair == trading_pair
-                    and order_book_snapshot.type == OrderBookMessageType.SNAPSHOT
-                ):
-                    return order_book_snapshot
-            except Exception as e:
-                self.logger().error(f"Error getting order book snapshot for {trading_pair}: {str(e)}")
+    async def _parse_trade_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
+        """
+        Received: {"stream":"btcusdc@trades","data":{"id":200299297171968,"price":"66657.35","amount":"0.184159","quoteAmount":"12275.55091865","time":1721461195599,"isBuyerMaker":false,"status":"CREATED"}}
+        """
+        exchange_symbol = raw_message["stream"].split("@")[0]
+        trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(exchange_symbol)
+
+        trade_message: OrderBookMessage = OrderBookMessage(
+            OrderBookMessageType.TRADE,
+            {
+                "trading_pair": trading_pair,
+                "trade_id": raw_message["data"]["id"],
+                "price": float(raw_message["data"]["price"]),
+                "amount": float(raw_message["data"]["amount"]),
+                "trade_type": TradeType.BUY if raw_message["data"]["isBuyerMaker"] else TradeType.SELL,
+            },
+            timestamp=raw_message["data"]["time"] / 1000,
+        )
+        message_queue.put_nowait(trade_message)
 
     def _channel_originating_message(self, event_message: Dict[str, Any]) -> str:
         channel = ""
@@ -159,29 +162,36 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         :param event_message: the event received through the websocket connection
         :param websocket_assistant: the websocket connection to use to interact with the exchange
         """
-        pass
+        return
 
     async def get_funding_info(self, trading_pair: str) -> FundingInfo:
         while True:
             try:
                 funding_info: FundingInfo = await self._message_queue[self._funding_info_messages_queue_key].get()
-                if funding_info.trading_pair == trading_pair:
-                    return funding_info
+                # store the latest funding info first
+                self._latest_funding_info[funding_info.trading_pair] = funding_info
+                # return the funding info if it matches the trading pair
+                latest_funding_info = self._latest_funding_info.get(trading_pair)
+                if latest_funding_info is not None:
+                    return latest_funding_info
+                else:
+                    continue
             except Exception as e:
                 self.logger().error(f"Error getting funding info for {trading_pair}: {str(e)}")
 
-    async def _parse_funding_info_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
-        """
-        {"stream":"btcusdc@market","data":{"fundingRate":"0.0001","nextFundingTime":1721318400000,"markPrice":"63957.19635104","offchainMarkPrice":"63933.32516509","offchainMarkPrice24HAgo":"64984.01218979","indexPrice":"63975.45818013","liquidationThreshold":"0.01","liquidationPriceOff":"0.005","24hVolume":"359.875166","24hQuoteVolume":"23224862.2791608","openInterest":"17.9197695","price24HAgo":"64928.02","lastTradePrice":"63910.73"}}
-        """
-        exchange_symbol = raw_message["stream"].split("@")[0]
-        trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(exchange_symbol)
-        funding_raw_data = raw_message["data"]
-        funding_info: FundingInfo = FundingInfo(
-            trading_pair=trading_pair,
-            index_price=Decimal(funding_raw_data["indexPrice"]),
-            mark_price=Decimal(funding_raw_data["markPrice"]),
-            next_funding_utc_timestamp=int(funding_raw_data["nextFundingTime"]),
-            rate=Decimal(funding_raw_data["fundingRate"]),
-        )
-        message_queue.put_nowait(funding_info)
+    async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
+        while True:
+            try:
+                order_book_message: OrderBookMessage = await self._message_queue[
+                    self._snapshot_messages_queue_key
+                ].get()
+                # store orderbook message first
+                self._latest_order_book_snapshots[order_book_message.trading_pair] = order_book_message
+                # return the order book snapshot if it matches the trading pair
+                order_book_snapshot = self._latest_order_book_snapshots.get(trading_pair)
+                if order_book_snapshot is not None:
+                    return order_book_snapshot
+                else:
+                    continue
+            except Exception as e:
+                self.logger().error(f"Error getting order book snapshot for {trading_pair}: {str(e)}")

@@ -196,7 +196,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             "amount": amount,
             "price": price,
             "timeInForce": time_in_force.value,
-            "orderSignature": build_info["orderHash"],
+            "orderHash": build_info["orderHash"],
             "info": build_info["order"]["info"],
             "gasFeeQuotation": build_info["gasFeeQuotation"],
         }
@@ -250,7 +250,12 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return response
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
-        pass
+        cancel_url = web_utils.private_rest_url(CONSTANTS.ORDER_URL, domain=self.name)
+        exchange_symbol = await self.exchange_symbol_associated_to_pair(tracked_order.trading_pair)
+        request_params = {"orderId": order_id, "marketId": exchange_symbol}
+        response_msg = await self._api_delete(path_url=cancel_url, data=request_params, is_auth_required=True)
+        if response_msg:
+            self.logger().error(f"Cancel order failed: {response_msg = }")
 
     async def _set_trading_pair_leverage(self, trading_pair: str, leverage: int) -> Tuple[bool, str]:
         return True, ""
@@ -259,6 +264,12 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return True, ""
 
     async def _fetch_last_fee_payment(self, trading_pair: str) -> Tuple[float, Decimal, Decimal]:
+        pass
+
+    async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
+        pass
+
+    async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
         pass
 
     def _get_fee(
@@ -370,12 +381,6 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             )
             trading_rules.append(trading_rule)
         return trading_rules
-
-    async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
-        pass
-
-    async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
-        pass
 
     def get_buy_collateral_token(self, trading_pair: str) -> str:
         trading_rule: TradingRule = self._trading_rules[trading_pair]
