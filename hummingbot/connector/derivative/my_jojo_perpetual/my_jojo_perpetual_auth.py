@@ -20,6 +20,9 @@ class MyJojoPerpetualAuth(AuthBase):
     async def rest_authenticate(self, request: RESTRequest) -> RESTRequest:
         if not request.params:
             request.params = {}
+        order_hash: str = request.params.pop("orderHash")
+        if order_hash:
+            request.params["orderSignature"] = self.sign_order(order_hash)
         request.params["timestamp"] = int(self._time_sync.time() * 1000)
         request.params["account"] = self._public_key
         request.params["signature"] = self.sign_message(**request.params)

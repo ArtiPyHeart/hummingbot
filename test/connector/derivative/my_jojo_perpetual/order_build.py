@@ -44,14 +44,13 @@ if __name__ == "__main__":
         "amount": Decimal("0.02"),
         "price": Decimal("2000"),
         "timeInForce": TimeInForce.GTC.value,
+        "orderSignature": auth.sign_order(build_info["orderHash"]),
         "info": build_info["order"]["info"],
         "gasFeeQuotation": build_info["gasFeeQuotation"],
-        "orderHash": build_info["orderHash"],
         "account": PUBLIC_KEY,
         "timestamp": current_time,
     }
-    # FIXME: The orderSignature is not correct
-    request_params["orderSignature"] = auth.sign_order(build_info["orderHash"])
+    request_params["signature"] = auth.sign_message(**request_params)
     response = requests.post(order_url, data=request_params)
     print(response.status_code)
     order_info = response.json()
