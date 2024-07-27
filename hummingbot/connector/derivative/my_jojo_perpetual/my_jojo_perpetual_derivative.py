@@ -1,4 +1,3 @@
-import asyncio
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -20,7 +19,8 @@ from hummingbot.connector.trading_rule import TradingRule
 from hummingbot.connector.utils import combine_to_hb_trading_pair
 from hummingbot.core.api_throttler.data_types import RateLimit
 from hummingbot.core.data_type.common import OrderType, PositionAction, PositionMode, PositionSide, TradeType
-from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderUpdate, TradeUpdate
+from hummingbot.core.data_type.funding_info import FundingInfo
+from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderState, OrderUpdate, TradeUpdate
 from hummingbot.core.data_type.perpetual_api_order_book_data_source import PerpetualAPIOrderBookDataSource
 from hummingbot.core.data_type.trade_fee import TradeFeeBase
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
@@ -49,7 +49,6 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         self._domain = domain
         self._public_key = public_key
         self._private_key = private_key
-        self._lock = asyncio.Lock()
 
         super().__init__(client_config_map=client_config_map)
 
@@ -134,10 +133,14 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return False
 
     def _is_order_not_found_during_status_update_error(self, status_update_exception: Exception) -> bool:
-        raise NotImplementedError
+        if status_update_exception is CONSTANTS.JojoOrderNotFoundError:
+            return True
+        return False
 
     def _is_order_not_found_during_cancelation_error(self, cancelation_exception: Exception) -> bool:
-        raise NotImplementedError
+        if cancelation_exception is CONSTANTS.JojoOrderNotFoundError:
+            return True
+        return False
 
     def _create_web_assistants_factory(self) -> WebAssistantsFactory:
         web_assistants_factory = web_utils.build_api_factory(
@@ -179,7 +182,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         expiration = kwargs.get("expiration", None)
         side = "BUY" if trade_type is TradeType.BUY else "SELL"
         order_type = "LIMIT" if order_type is OrderType.LIMIT else "MARKET"
-        build_info = await self._build_order(
+        build_info = await self._place_order_build_order(
             exchange_symbol=exchange_symbol,
             side=side,
             order_type=order_type,
@@ -210,7 +213,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         order_time = response["createdAt"] / 1000
         return order_id, order_time
 
-    async def _build_order(
+    async def _place_order_build_order(
         self,
         exchange_symbol: str,
         side: str,
@@ -256,6 +259,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         response_msg = await self._api_delete(path_url=cancel_url, data=request_params, is_auth_required=True)
         if response_msg:
             self.logger().error(f"Cancel order failed: {response_msg = }")
+            raise CONSTANTS.JojoOrderNotFoundError(f"Cancel order failed: {response_msg = }")
 
     async def _set_trading_pair_leverage(self, trading_pair: str, leverage: int) -> Tuple[bool, str]:
         return True, ""
@@ -264,13 +268,87 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return True, ""
 
     async def _fetch_last_fee_payment(self, trading_pair: str) -> Tuple[float, Decimal, Decimal]:
-        pass
+        # return timestamp, funding_rate, payment
+        funding_info: Optional[FundingInfo] = self._orderbook_ds.get_latest_funding_info(trading_pair)  # type: ignore
+        funding_fee: Optional[Dict[str, Any]] = self._raw_funding_fees_websocket.get(trading_pair)
+        if funding_info is None or funding_fee is None:
+            return 0, Decimal("-1"), Decimal("-1")
+        funding_time = funding_fee["time"] / 1000
+        payment = Decimal(funding_fee["amount"])
+        return funding_time, funding_info.rate, payment
 
     async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
-        pass
+        open_order_url = web_utils.private_rest_url(CONSTANTS.OPEN_ORDER_URL, domain=self.name)
+        exchange_symbol = await self.exchange_symbol_associated_to_pair(tracked_order.trading_pair)
+        request_params = {"orderId": tracked_order.exchange_order_id, "marketId": exchange_symbol}
+        response = await self._api_get(path_url=open_order_url, params=request_params, is_auth_required=True)
+        if "code" in response:
+            # error
+            self.logger().error(f"Error fetching order status: {response = }")
+            raise CONSTANTS.JojoOrderNotFoundError(
+                f"No order={tracked_order.exchange_order_id} in _request_order_status: {response = }"
+            )
+        else:
+            return OrderUpdate(
+                trading_pair=tracked_order.trading_pair,
+                update_timestamp=self._time_synchronizer.time(),
+                new_state=CONSTANTS.ORDER_STATUS[response["status"]],
+                client_order_id=tracked_order.client_order_id,
+                exchange_order_id=tracked_order.exchange_order_id,
+            )
 
     async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
-        pass
+        trades_url = web_utils.private_rest_url(CONSTANTS.USER_TRADES_URL, domain=self.name)
+        exchange_symbol = await self.exchange_symbol_associated_to_pair(order.trading_pair)
+        request_params = {"fromId": order.exchange_order_id, "marketId": exchange_symbol}
+        response = await self._api_get(path_url=trades_url, params=request_params, is_auth_required=True)
+        if "code" in response:
+            self.logger().error(f"Error fetching trade updates: {response = }")
+            return []
+
+        trade_updates = []
+        for trade in response:
+            """
+            {
+                "id": 23,
+                "commission": "-0.119924",
+                "isMaker": false,
+                "isBuyer": false,
+                "marketId": "btcusdc",
+                "price": "29981",
+                "amount": "0.008",
+                "quoteAmount": "239.848",
+                "time": 1656125389579,
+                "status": "SETTLED",
+                "timeInForce": "GTC",
+                "realizedPNL": "0",
+                "orderType": "LIMIT"
+            }
+            """
+            if trade["status"] == "SETTLED":
+                trading_fee = self.get_fee(
+                    base_currency=order.base_asset,
+                    quote_currency=order.quote_asset,
+                    order_type=order.order_type,
+                    order_side=order.trade_type,
+                    position_action=PositionAction.NIL,
+                    amount=Decimal(trade["amount"]),
+                    price=Decimal(trade["price"]),
+                    is_maker=trade["isMaker"],
+                )
+                trade_update = TradeUpdate(
+                    trade_id=trade["id"],
+                    client_order_id=order.client_order_id,
+                    exchange_order_id=order.exchange_order_id,
+                    trading_pair=order.trading_pair,
+                    fill_timestamp=trade["time"] / 1000,
+                    fill_price=Decimal(trade["price"]),
+                    fill_base_amount=Decimal(trade["amount"]),
+                    fill_quote_amount=Decimal(trade["quoteAmount"]),
+                    fee=trading_fee,
+                )
+                trade_updates.append(trade_update)
+        return trade_updates
 
     def _get_fee(
         self,
@@ -304,11 +382,11 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         async for event_message in self._iter_user_event_queue():
             if "event" in event_message:
                 if event_message["event"] == "ACCOUNT_UPDATE":
-                    async with self._lock:
-                        self._raw_balances_websocket = event_message["balances"]
-                        self._raw_positions_websocket = event_message["positions"]
+                    self._raw_balances_websocket = event_message["balances"]
+                    self._raw_positions_websocket = event_message["positions"]
+
                 elif event_message["event"] == "INCOME_UPDATE":
-                    async with self._lock:
+                    async with self._mapping_initialization_lock:
                         incomes = event_message["incomes"]
                         for income in incomes:
                             trading_pair = await self.trading_pair_associated_to_exchange_symbol(income["marketId"])
@@ -325,10 +403,75 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                                     }
                                     """
                                     self._raw_funding_fees_websocket[trading_pair] = income
+
                 elif event_message["event"] == "ORDER_UPDATE":
-                    pass
+                    timestamp = event_message["timestamp"] / 1000
+                    order_info = event_message["order"]
+                    client_order_id = f"{order_info['marketId']}-{order_info['side']}-{order_info['price']}"
+                    trading_pair = await self.trading_pair_associated_to_exchange_symbol(order_info["marketId"])
+                    tracked_order: Optional[InFlightOrder] = self._order_tracker.all_fillable_orders.get(
+                        client_order_id
+                    )
+                    if tracked_order is None:
+                        self.start_tracking_order(
+                            order_id=client_order_id,
+                            exchange_order_id=order_info["id"],
+                            trading_pair=trading_pair,
+                            trade_type=TradeType.BUY if order_info["side"] == "BUY" else TradeType.SELL,
+                            price=Decimal(order_info["price"]),
+                            amount=Decimal(order_info["amount"]),
+                            order_type=OrderType.LIMIT if order_info["type"] == "LIMIT" else OrderType.MARKET,
+                        )
+                    else:
+                        order_status: OrderState = CONSTANTS.ORDER_STATUS[order_info["status"]]
+                        order_update = OrderUpdate(
+                            trading_pair=tracked_order.trading_pair,
+                            update_timestamp=timestamp,
+                            new_state=CONSTANTS.ORDER_STATUS[order_info["status"]],
+                            client_order_id=client_order_id,
+                            exchange_order_id=order_info["id"],
+                        )
+                        self._order_tracker.process_order_update(order_update)
+                        if order_status in [OrderState.FILLED, OrderState.CANCELED, OrderState.FAILED]:
+                            self.stop_tracking_order(client_order_id)
+
                 elif event_message["event"] == "TRADE_UPDATE":
+                    # trade_info = event_message["trade"]
+                    # filled_time = trade_info["time"] / 1000
+                    # trading_pair = await self.trading_pair_associated_to_exchange_symbol(trade_info["marketId"])
+                    # side = "BUY" if trade_info["isBuyer"] else "SELL"
+                    # order_type = OrderType.LIMIT if trade_info["orderType"] == "LIMIT" else OrderType.MARKET
+                    # client_order_id = f"{trade_info['marketId']}-{side}-{trade_info['price']}"
+                    # tracked_order: InFlightOrder = self._order_tracker.all_orders[client_order_id]
+                    # base_asset, quote_asset = split_hb_trading_pair(trading_pair)
+                    # amount = Decimal(trade_info["amount"])
+                    # price = Decimal(trade_info["price"])
+                    # trade_fee = self.get_fee(
+                    #     base_currency=base_asset,
+                    #     quote_currency=quote_asset,
+                    #     order_type=order_type,
+                    #     order_side=TradeType.BUY if side == "BUY" else TradeType.SELL,
+                    #     position_action=PositionAction.NIL,
+                    #     amount=amount,
+                    #     price=price,
+                    #     is_maker=trade_info["isMaker"],
+                    # )
+                    # trade_update: TradeUpdate = TradeUpdate(
+                    #     trade_id=trade_info["id"],
+                    #     client_order_id=client_order_id,
+                    #     exchange_order_id=tracked_order.exchange_order_id,
+                    #     trading_pair=trading_pair,
+                    #     fill_timestamp=filled_time,
+                    #     fill_price=price,
+                    #     fill_base_amount=amount,
+                    #     fill_quote_amount=Decimal(trade_info["quoteAmount"]),
+                    #     fee=trade_fee,
+                    #     is_taker=not trade_info["isMaker"],
+                    # )
+                    # self._order_tracker.process_trade_update(trade_update)
+
                     pass
+
                 elif event_message["event"] == "DEGEN_ACCOUNT_STATE_UPDATE":
                     pass
                 else:
@@ -337,14 +480,11 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                 return
 
     async def _update_balances(self):
-        async with self._lock:
-            self._account_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["netValue"])
-            self._account_available_balances[CONSTANTS.CURRENCY] = Decimal(
-                self._raw_balances_websocket["availableMargin"]
-            )
+        self._account_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["netValue"])
+        self._account_available_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["availableMargin"])
 
     async def _update_positions(self):
-        async with self._lock:
+        async with self._mapping_initialization_lock:
             leverage = Decimal(self._raw_balances_websocket["leverage"])
             for p_info in self._raw_positions_websocket:
                 trading_pair = await self.trading_pair_associated_to_exchange_symbol(p_info["symbol"])

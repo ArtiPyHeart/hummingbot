@@ -50,5 +50,5 @@ class MyJojoPerpetualAuth(AuthBase):
         return self._sign(message_hash)
 
     def sign_order(self, order_hash: str):
-        order_bytes = web3.Web3.to_bytes(hexstr=order_hash)
+        order_bytes = web3.Web3.to_bytes(hexstr=order_hash)  # type: ignore
         return self._sign(order_bytes)

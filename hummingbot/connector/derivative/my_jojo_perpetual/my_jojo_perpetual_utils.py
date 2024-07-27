@@ -1,4 +1,3 @@
-import time
 from decimal import Decimal
 
 from pydantic import Field, SecretStr
@@ -15,16 +14,6 @@ DEFAULT_FEES = TradeFeeSchema(
 CENTRALIZED = False
 
 EXAMPLE_PAIR = "btcusdc"
-
-
-def current_time_millis() -> int:
-    return int(time.time() * 1000)
-
-
-def get_expiry_timestamp_in_millis(seconds: int) -> int:
-    # must greater than 1 minute and less than 7 day
-    seconds = min(max(60, seconds), 604800)
-    return current_time_millis() + seconds * 1000
 
 
 class MyJojoPerpetualConfigMap(BaseConnectorConfigMap):

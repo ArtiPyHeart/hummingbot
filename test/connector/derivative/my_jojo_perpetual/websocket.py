@@ -1,4 +1,5 @@
 import asyncio
+from test.connector.derivative.my_jojo_perpetual.rest_api import PRIVATE_KEY, PUBLIC_KEY, auth, time_sync
 from urllib.parse import urljoin
 
 import websockets
@@ -8,17 +9,15 @@ from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constan
     PERPETUAL_WS_URL,
     WS_SINGLE_URL,
 )
-from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_utils import current_time_millis
 
 if __name__ == "__main__":
-    from .test_rest_api import PRIVATE_KEY, PUBLIC_KEY, sign_message
 
     async def run_websocket():
         account = PUBLIC_KEY
         uri = furl(urljoin(PERPETUAL_WS_URL, WS_SINGLE_URL))
         uri /= f"account@{account}"
-        timestamp = current_time_millis()
-        sign = sign_message(
+        timestamp = int(time_sync.time() * 1e3)
+        sign = auth.sign_message(
             PRIVATE_KEY,
             account=account,
             timestamp=timestamp,

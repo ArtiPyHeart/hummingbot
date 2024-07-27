@@ -38,6 +38,9 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         self._latest_order_book_snapshots: Dict[str, OrderBookMessage] = {}
         self._latest_funding_info: Dict[str, FundingInfo] = {}
 
+    async def get_latest_funding_info(self, trading_pair: str) -> Optional[FundingInfo]:
+        return self._latest_funding_info.get(trading_pair)
+
     async def _connected_websocket_assistant(self) -> WSAssistant:
         ws_url = web_utils.wss_url(CONSTANTS.WS_COMBINED_URL, self._domain)
         ws: WSAssistant = await self._api_factory.get_ws_assistant()

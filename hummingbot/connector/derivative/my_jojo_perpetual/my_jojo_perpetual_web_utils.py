@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urljoin
 
@@ -6,19 +7,17 @@ from hummingbot.connector.time_synchronizer import TimeSynchronizer
 from hummingbot.connector.utils import TimeSynchronizerRESTPreProcessor
 from hummingbot.core.api_throttler.async_throttler import AsyncThrottler
 from hummingbot.core.web_assistant.auth import AuthBase
-from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest
-from hummingbot.core.web_assistant.rest_pre_processors import RESTPreProcessorBase
+from hummingbot.core.web_assistant.connections.data_types import RESTMethod
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
 
-
-class MyJojoPerpetualRESTPreProcessor(RESTPreProcessorBase):
-
-    async def pre_process(self, request: RESTRequest) -> RESTRequest:
-        if request.headers is None:
-            request.headers = {}
-        # if request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
-        #     request.headers["Content-Type"] = "application/x-www-form-urlencoded"
-        return request
+# class MyJojoPerpetualRESTPreProcessor(RESTPreProcessorBase):
+#
+#     async def pre_process(self, request: RESTRequest) -> RESTRequest:
+#         if request.headers is None:
+#             request.headers = {}
+#         # if request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
+#         #     request.headers["Content-Type"] = "application/x-www-form-urlencoded"
+#         return request
 
 
 def public_rest_url(path_url: str, domain: str = "my_jojo_perpetual"):
@@ -41,7 +40,8 @@ def create_throttler() -> AsyncThrottler:
 
 
 def build_api_factory_without_time_synchronizer_pre_processor(throttler: AsyncThrottler) -> WebAssistantsFactory:
-    api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[MyJojoPerpetualRESTPreProcessor()])
+    # api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[MyJojoPerpetualRESTPreProcessor()])
+    api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[])
     return api_factory
 
 
@@ -81,18 +81,13 @@ def build_api_factory(
 ) -> WebAssistantsFactory:
     throttler = throttler or create_throttler()
     time_synchronizer = time_synchronizer or TimeSynchronizer()
-    time_provider = time_provider or (
-        lambda: get_current_server_time(
-            throttler=throttler,
-            domain=domain,
-        )
-    )
+    time_provider = time_provider or partial(get_current_server_time, throttler=throttler, domain=domain)
     api_factory = WebAssistantsFactory(
         throttler=throttler,
         auth=auth,
         rest_pre_processors=[
             TimeSynchronizerRESTPreProcessor(synchronizer=time_synchronizer, time_provider=time_provider),
-            MyJojoPerpetualRESTPreProcessor(),
+            # MyJojoPerpetualRESTPreProcessor(),
         ],
     )
     return api_factory

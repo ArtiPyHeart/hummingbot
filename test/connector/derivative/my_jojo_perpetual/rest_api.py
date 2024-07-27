@@ -8,7 +8,6 @@ from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constan
     ACCOUNT_URL,
     PERPETUAL_BASE_URL,
 )
-from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_utils import current_time_millis
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
 
 PUBLIC_KEY = ""
@@ -20,10 +19,10 @@ auth = MyJojoPerpetualAuth(PUBLIC_KEY, PRIVATE_KEY, time_sync)
 if __name__ == "__main__":
     url = urljoin(PERPETUAL_BASE_URL, ACCOUNT_URL)
     account = PUBLIC_KEY
-    timestamp = current_time_millis()
+    timestamp = int(time_sync.time() * 1000)
     params = {
         "account": account,
-        "timestamp": current_time_millis(),
+        "timestamp": timestamp,
     }
     sign = auth.sign_message(**params)
     print(sign)
