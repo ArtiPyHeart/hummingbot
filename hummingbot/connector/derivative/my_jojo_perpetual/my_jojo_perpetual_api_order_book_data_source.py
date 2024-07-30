@@ -178,6 +178,13 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
                 if latest_funding_info is not None:
                     return latest_funding_info
                 else:
+                    # rest_api_resp: Optional[FundingInfo] = await self._connector.get_funding_info_from_rest_api(
+                    #     trading_pair
+                    # )
+                    # if rest_api_resp:
+                    #     self._latest_funding_info[trading_pair] = rest_api_resp
+                    #     return rest_api_resp
+                    # else:
                     continue
             except Exception as e:
                 self.logger().error(f"Error getting funding info for {trading_pair}: {str(e)}")

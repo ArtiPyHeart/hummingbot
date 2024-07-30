@@ -108,6 +108,54 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
     def funding_fee_poll_interval(self) -> int:
         return 28800
 
+    async def get_kline_from_rest_api(self, trading_pair: str, interval: str = "1M"):
+        full_url = web_utils.public_rest_url(CONSTANTS.KLINES_URL, domain=self.name)
+        exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
+        request_params = {"marketId": exchange_symbol, "interval": interval, "limit": 1}
+        response = await self._api_get(path_url=full_url, params=request_params)
+        if isinstance(response, list) and len(response) > 0:
+            """
+            {
+                "time": 1656029700000,
+                "open": "2001",
+                "close": "2001",
+                "high": "2001",
+                "low": "2001",
+                "volume": "0"
+            }
+            """
+            return response[0]
+        else:
+            self.logger().error(f"Error fetching kline: {response = }")
+            return None
+
+    async def get_funding_info_from_rest_api(self, trading_pair: str) -> Optional[FundingInfo]:
+        full_url = web_utils.public_rest_url(CONSTANTS.FUNDING_RATE_URL, domain=self.name)
+        exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
+        request_params = {"marketId": exchange_symbol, "limit": 1}
+        response = await self._api_get(path_url=full_url, params=request_params)
+        kline = await self.get_kline_from_rest_api(trading_pair)
+        if isinstance(response, list) and len(response) > 0 and kline:
+            """
+            {
+                "marketId": "btcusdc",
+                "fundingRate": "0.0000026",
+                "fundingTime": 1655902360000
+            }
+            """
+            resp = response[0]
+            funding_info = FundingInfo(
+                trading_pair=trading_pair,
+                index_price=Decimal(kline["close"]),
+                mark_price=Decimal(kline["close"]),
+                next_funding_utc_timestamp=resp["fundingTime"] / 1000 + self.funding_fee_poll_interval,
+                rate=Decimal(resp["fundingRate"]),
+            )
+            return funding_info
+        else:
+            self.logger().error(f"Error fetching funding rate: {response = }")
+            return None
+
     def _initialize_trading_pair_symbols_from_exchange_info(self, exchange_info: Dict[str, Any]):
         try:
             symbol_map = bidict()
