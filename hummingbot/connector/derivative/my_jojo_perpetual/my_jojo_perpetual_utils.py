@@ -13,7 +13,7 @@ DEFAULT_FEES = TradeFeeSchema(
 
 CENTRALIZED = False
 
-EXAMPLE_PAIR = "btcusdc"
+EXAMPLE_PAIR = "ethusdc"
 
 
 class MyJojoPerpetualConfigMap(BaseConnectorConfigMap):

@@ -34,14 +34,14 @@ class MyJojoPerpetualUserStreamDataSource(UserStreamTrackerDataSource):
         # 直接在connect的时候拼接出完整url并完成授权
         ws: WSAssistant = await self._api_factory.get_ws_assistant()
         base_url = web_utils.wss_url(CONSTANTS.WS_SINGLE_URL, self._domain)
-        url = furl(base_url)
+        full_url = furl(base_url)
         account = self._auth._public_key
-        url /= f"account@{account}"
+        full_url /= f"account@{account}"
         timestamp = int(self._connector._time_synchronizer.time() * 1e3)
-        url.args["timestamp"] = timestamp
+        full_url.args["timestamp"] = timestamp
         sign = self._auth.sign_message(**{"account": account, "timestamp": timestamp})
-        url.args["signature"] = sign
-        await ws.connect(url.url)
+        full_url.args["signature"] = sign
+        await ws.connect(full_url.url)
         return ws
 
     async def _subscribe_channels(self, websocket_assistant: WSAssistant):

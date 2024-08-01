@@ -169,7 +169,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             self.logger().error(f"Error initializing trading pair symbol map: {str(e)}")
 
     async def _make_network_check_request(self):
-        await self._api_get(path_url=self.check_network_request_path)
+        return self._api_get(path_url=self.check_network_request_path)
 
     def supported_order_types(self) -> List[OrderType]:
         return [OrderType.LIMIT, OrderType.MARKET]
