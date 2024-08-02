@@ -1,3 +1,4 @@
+import time
 from decimal import Decimal
 from pprint import pprint
 from test.connector.derivative.my_jojo_perpetual.rest_api import PRIVATE_KEY, PUBLIC_KEY
@@ -55,3 +56,15 @@ if __name__ == "__main__":
     print(response.status_code)
     order_info = response.json()
     pprint(order_info)
+
+    time.sleep(61)
+    cancel_url = urljoin(PERPETUAL_BASE_URL, ORDER_URL)
+    cancel_params = {
+        "orderId": order_info["id"],
+        "marketId": "ethusdc",
+    }
+    cancel_params["signature"] = auth.sign_message(**cancel_params)
+    response = requests.delete(cancel_url, data=cancel_params)
+    print(response.status_code)
+    cancel_info = response.json()
+    pprint(cancel_info)
