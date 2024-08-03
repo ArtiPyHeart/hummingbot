@@ -319,7 +319,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
 
     async def _fetch_last_fee_payment(self, trading_pair: str) -> Tuple[float, Decimal, Decimal]:
         # return timestamp, funding_rate, payment
-        funding_info: Optional[FundingInfo] = self._orderbook_ds.get_latest_funding_info(trading_pair)  # type: ignore
+        funding_info: Optional[FundingInfo] = await self._orderbook_ds.get_latest_funding_info(trading_pair)  # type: ignore
         funding_fee: Optional[Dict[str, Any]] = self._raw_funding_fees_websocket.get(trading_pair)
         if funding_info is None or funding_fee is None:
             return 0, Decimal("-1"), Decimal("-1")

@@ -1,5 +1,4 @@
 import asyncio
-import time
 from decimal import Decimal
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -102,7 +101,7 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         order_book_message: OrderBookMessage = OrderBookMessage(
             OrderBookMessageType.DIFF,
             {"trading_pair": trading_pair, "update_id": raw_message["data"]["endSequence"], "bids": bids, "asks": asks},
-            timestamp=time.time(),
+            timestamp=self._connector._time_synchronizer.time(),
         )
         message_queue.put_nowait(order_book_message)
 
@@ -117,7 +116,7 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         order_book_message: OrderBookMessage = OrderBookMessage(
             OrderBookMessageType.SNAPSHOT,
             {"trading_pair": trading_pair, "update_id": raw_message["data"]["sequence"], "bids": bids, "asks": asks},
-            timestamp=time.time(),
+            timestamp=self._connector._time_synchronizer.time(),
         )
         message_queue.put_nowait(order_book_message)
 

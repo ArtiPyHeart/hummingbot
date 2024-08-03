@@ -20,13 +20,12 @@ from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFa
 from hummingbot.core.web_assistant.ws_post_processors import WSPostProcessorBase
 from hummingbot.core.web_assistant.ws_pre_processors import WSPreProcessorBase
 
-
-class MyJojoPerpetualRESTPreProcessor(RESTPreProcessorBase):
-
-    async def pre_process(self, request: RESTRequest) -> RESTRequest:
-        if request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
-            request.headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        return request
+# class MyJojoPerpetualRESTPreProcessor(RESTPreProcessorBase):
+#
+#     async def pre_process(self, request: RESTRequest) -> RESTRequest:
+#         if request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
+#             request.headers = {"Content-Type": "application/x-www-form-urlencoded"}
+#         return request
 
 
 class MyJojoPerpetualRESTPostProcessor(RESTPostProcessorBase):
@@ -57,8 +56,8 @@ def create_throttler() -> AsyncThrottler:
 
 
 def build_api_factory_without_time_synchronizer_pre_processor(throttler: AsyncThrottler) -> WebAssistantsFactory:
-    api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[MyJojoPerpetualRESTPreProcessor()])
-    # api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[])
+    # api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[MyJojoPerpetualRESTPreProcessor()])
+    api_factory = WebAssistantsFactory(throttler=throttler, rest_pre_processors=[])
     return api_factory
 
 
@@ -165,7 +164,7 @@ class MyJojoRESTAssistant(RESTAssistant):
         headers: Optional[Dict[str, Any]] = None,
     ) -> RESTResponse:
 
-        local_headers = headers or {}
+        local_headers = headers if headers else {}
 
         data = data if data else None
 
@@ -240,7 +239,7 @@ def build_api_factory(
         auth=auth,
         rest_pre_processors=[
             TimeSynchronizerRESTPreProcessor(synchronizer=time_synchronizer, time_provider=time_provider),
-            MyJojoPerpetualRESTPreProcessor(),
+            # MyJojoPerpetualRESTPreProcessor(),
         ],
     )
     return api_factory
