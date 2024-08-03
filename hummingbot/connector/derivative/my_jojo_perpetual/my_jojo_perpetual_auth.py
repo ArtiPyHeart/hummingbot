@@ -1,10 +1,11 @@
+from typing import Optional
 from urllib.parse import urlencode
 
 import web3
 
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
 from hummingbot.core.web_assistant.auth import AuthBase
-from hummingbot.core.web_assistant.connections.data_types import RESTRequest, WSRequest
+from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest, WSRequest
 
 
 class MyJojoPerpetualAuth(AuthBase):
@@ -18,14 +19,21 @@ class MyJojoPerpetualAuth(AuthBase):
         return self._public_key
 
     async def rest_authenticate(self, request: RESTRequest) -> RESTRequest:
-        if not request.params:
-            request.params = {}
-        order_hash: str = request.params.pop("orderHash")
-        if order_hash:
-            request.params["orderSignature"] = self.sign_order(order_hash)
-        request.params["timestamp"] = int(self._time_sync.time() * 1000)
-        request.params["account"] = self._public_key
-        request.params["signature"] = self.sign_message(**request.params)
+        if request.method == RESTMethod.GET or request.method == RESTMethod.DELETE:
+            if not request.params:
+                request.params = {}
+            request.params["timestamp"] = int(self._time_sync.time() * 1000)
+            request.params["account"] = self._public_key
+            request.params["signature"] = self.sign_message(**request.params)
+        elif request.method == RESTMethod.POST or request.method == RESTMethod.PUT:
+            order_hash: Optional[str] = request.data.pop("orderHash", None)
+            if order_hash:
+                request.data["orderSignature"] = self.sign_order(order_hash)
+            request.data["timestamp"] = int(self._time_sync.time() * 1000)
+            request.data["account"] = self._public_key
+            request.data["signature"] = self.sign_message(**request.data)
+            request.data = request.data
+
         return request
 
     async def ws_authenticate(self, request: WSRequest) -> WSRequest:

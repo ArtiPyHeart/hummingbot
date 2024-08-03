@@ -8,6 +8,7 @@ from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constan
     ACCOUNT_URL,
     PERPETUAL_BASE_URL,
 )
+from hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_web_utils import build_api_factory
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
 
 PUBLIC_KEY = ""
@@ -15,6 +16,10 @@ PRIVATE_KEY = ""
 
 time_sync = TimeSynchronizer()
 auth = MyJojoPerpetualAuth(PUBLIC_KEY, PRIVATE_KEY, time_sync)
+api_factory = build_api_factory(
+    time_synchronizer=time_sync,
+    auth=auth,
+)
 
 if __name__ == "__main__":
     url = urljoin(PERPETUAL_BASE_URL, ACCOUNT_URL)

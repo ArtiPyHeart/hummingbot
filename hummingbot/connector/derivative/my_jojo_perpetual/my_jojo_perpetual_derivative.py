@@ -112,7 +112,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         full_url = web_utils.public_rest_url(CONSTANTS.KLINES_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
         request_params = {"marketId": exchange_symbol, "interval": interval, "limit": 1}
-        response = await self._api_get(path_url=full_url, params=request_params)
+        response = await self._api_get(path_url=full_url, params=request_params, return_err=True)
         if isinstance(response, list) and len(response) > 0:
             """
             {
@@ -133,7 +133,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         full_url = web_utils.public_rest_url(CONSTANTS.FUNDING_RATE_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
         request_params = {"marketId": exchange_symbol, "limit": 1}
-        response = await self._api_get(path_url=full_url, params=request_params)
+        response = await self._api_get(path_url=full_url, params=request_params, return_err=True)
         kline = await self.get_kline_from_rest_api(trading_pair)
         if isinstance(response, list) and len(response) > 0 and kline:
             """
@@ -256,7 +256,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                 request_params["timeInForce"] = CONSTANTS.TimeInForce.GTC
             else:
                 request_params["expiration"] = expiration
-        response = await self._api_post(path_url=order_url, data=request_params, is_auth_required=True)
+        response = await self._api_post(path_url=order_url, data=request_params, is_auth_required=True, return_err=True)
         order_id = response["id"]
         order_time = response["createdAt"] / 1000
         return order_id, order_time
@@ -285,7 +285,7 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                 request_params["timeInForce"] = CONSTANTS.TimeInForce.GTC
             else:
                 request_params["expiration"] = expiration
-        response = await self._api_post(path_url=full_url, data=request_params, is_auth_required=True)
+        response = await self._api_post(path_url=full_url, data=request_params, is_auth_required=True, return_err=True)
         """
         {'gasFeeQuotation': 'some hash',
          'order': {'creditAmount': '-40000000',
@@ -304,7 +304,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         cancel_url = web_utils.private_rest_url(CONSTANTS.ORDER_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(tracked_order.trading_pair)
         request_params = {"orderId": order_id, "marketId": exchange_symbol}
-        response_msg = await self._api_delete(path_url=cancel_url, data=request_params, is_auth_required=True)
+        response_msg = await self._api_delete(
+            path_url=cancel_url, params=request_params, is_auth_required=True, return_err=True
+        )
         if response_msg:
             self.logger().error(f"Cancel order failed: {response_msg = }")
             raise CONSTANTS.JojoOrderNotFoundError(f"Cancel order failed: {response_msg = }")
@@ -329,7 +331,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         open_order_url = web_utils.private_rest_url(CONSTANTS.OPEN_ORDER_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(tracked_order.trading_pair)
         request_params = {"orderId": tracked_order.exchange_order_id, "marketId": exchange_symbol}
-        response = await self._api_get(path_url=open_order_url, params=request_params, is_auth_required=True)
+        response = await self._api_get(
+            path_url=open_order_url, params=request_params, is_auth_required=True, return_err=True
+        )
         if "code" in response:
             # error
             self.logger().error(f"Error fetching order status: {response = }")
@@ -349,7 +353,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         trades_url = web_utils.private_rest_url(CONSTANTS.USER_TRADES_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(order.trading_pair)
         request_params = {"fromId": order.exchange_order_id, "marketId": exchange_symbol}
-        response = await self._api_get(path_url=trades_url, params=request_params, is_auth_required=True)
+        response = await self._api_get(
+            path_url=trades_url, params=request_params, is_auth_required=True, return_err=True
+        )
         if "code" in response:
             self.logger().error(f"Error fetching trade updates: {response = }")
             return []
