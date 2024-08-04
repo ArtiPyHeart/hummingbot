@@ -18,19 +18,19 @@ EXAMPLE_PAIR = "ethusdc"
 
 class MyJojoPerpetualConfigMap(BaseConnectorConfigMap):
     connector: str = Field(default="my_jojo_perpetual", client_data=None)
-    my_jojo_perpetual_api_secret: SecretStr = Field(
+    my_jojo_perpetual_api_key: SecretStr = Field(
         default=...,
         client_data=ClientFieldData(
-            prompt=lambda cm: "Enter your Base wallet private key",
+            prompt=lambda cm: "Enter your Base address",
             is_secure=True,
             is_connect_key=True,
             prompt_on_new=True,
         ),
     )
-    my_jojo_perpetual_api_key: SecretStr = Field(
+    my_jojo_perpetual_api_secret: SecretStr = Field(
         default=...,
         client_data=ClientFieldData(
-            prompt=lambda cm: "Enter your Base address",
+            prompt=lambda cm: "Enter your Base wallet private key",
             is_secure=True,
             is_connect_key=True,
             prompt_on_new=True,
@@ -56,19 +56,19 @@ OTHER_DOMAINS_DEFAULT_FEES = {
 
 class MyJojoPerpetualTestnetConfigMap(BaseConnectorConfigMap):
     connector: str = Field(default="my_jojo_perpetual_testnet", client_data=None)
-    my_jojo_perpetual_api_secret: SecretStr = Field(
+    my_jojo_perpetual_api_key: SecretStr = Field(
         default=...,
         client_data=ClientFieldData(
-            prompt=lambda cm: "Enter your Base wallet private key",
+            prompt=lambda cm: "Enter your Base address",
             is_secure=True,
             is_connect_key=True,
             prompt_on_new=True,
         ),
     )
-    my_jojo_perpetual_api_key: SecretStr = Field(
+    my_jojo_perpetual_api_secret: SecretStr = Field(
         default=...,
         client_data=ClientFieldData(
-            prompt=lambda cm: "Enter your Base address",
+            prompt=lambda cm: "Enter your Base wallet private key",
             is_secure=True,
             is_connect_key=True,
             prompt_on_new=True,
