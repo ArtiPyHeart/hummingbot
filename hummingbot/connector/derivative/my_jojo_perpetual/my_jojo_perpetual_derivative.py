@@ -38,8 +38,8 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
     def __init__(
         self,
         client_config_map: "ClientConfigAdapter",
-        my_jojo_perpetual_api_key: str,
-        my_jojo_perpetual_api_secret: str,
+        my_jojo_perpetual_eth_address: str,
+        my_jojo_perpetual_eth_private_key: str,
         trading_pairs: Optional[List[str]] = None,
         trading_required: bool = True,
         domain: str = CONSTANTS.DOMAIN,
@@ -47,8 +47,8 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         self._trading_pairs = trading_pairs
         self._trading_required = trading_required
         self._domain = domain
-        self._public_key = my_jojo_perpetual_api_key
-        self._private_key = my_jojo_perpetual_api_secret
+        self._public_key = my_jojo_perpetual_eth_address
+        self._private_key = my_jojo_perpetual_eth_private_key
 
         super().__init__(client_config_map=client_config_map)
 
