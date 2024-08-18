@@ -7,7 +7,7 @@ import numpy as np
 import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_constants as CONSTANTS
 import hummingbot.connector.derivative.my_jojo_perpetual.my_jojo_perpetual_web_utils as web_utils
 from hummingbot.core.data_type.common import TradeType
-from hummingbot.core.data_type.funding_info import FundingInfo
+from hummingbot.core.data_type.funding_info import FundingInfo, FundingInfoUpdate
 from hummingbot.core.data_type.order_book_message import OrderBookMessage, OrderBookMessageType
 from hummingbot.core.data_type.perpetual_api_order_book_data_source import PerpetualAPIOrderBookDataSource
 from hummingbot.core.web_assistant.connections.data_types import WSJSONRequest
@@ -55,7 +55,7 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         url = web_utils.public_rest_url(CONSTANTS.TRADES_URL, domain=domain)
         exchange_symbol = await self._connector.exchange_symbol_associated_to_pair(trading_pair)
         params = {"marketId": exchange_symbol, "limit": 1}
-        raw_response = self._connector._api_get(url, params=params)
+        raw_response = await self._connector._api_get(url, params=params)
         return float(raw_response[0]["price"])
 
     async def _subscribe_channels(self, ws: WSAssistant):
@@ -81,11 +81,11 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         exchange_symbol = raw_message["stream"].split("@")[0]
         trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(exchange_symbol)
         funding_raw_data = raw_message["data"]
-        funding_info: FundingInfo = FundingInfo(
+        funding_info: FundingInfoUpdate = FundingInfoUpdate(
             trading_pair=trading_pair,
             index_price=Decimal(funding_raw_data["indexPrice"]),
             mark_price=Decimal(funding_raw_data["markPrice"]),
-            next_funding_utc_timestamp=int(funding_raw_data["nextFundingTime"]),
+            next_funding_utc_timestamp=int(funding_raw_data["nextFundingTime"] / 1000),
             rate=Decimal(funding_raw_data["fundingRate"]),
         )
         message_queue.put_nowait(funding_info)
@@ -167,40 +167,42 @@ class MyJojoPerpetualAPIOrderBookDataSource(PerpetualAPIOrderBookDataSource):
         return
 
     async def get_funding_info(self, trading_pair: str) -> FundingInfo:
-        while True:
-            try:
-                funding_info: FundingInfo = await self._message_queue[self._funding_info_messages_queue_key].get()
-                # store the latest funding info first
-                self._latest_funding_info[funding_info.trading_pair] = funding_info
-                # return the funding info if it matches the trading pair
-                latest_funding_info = self._latest_funding_info.get(trading_pair)
-                if latest_funding_info is not None:
-                    return latest_funding_info
-                else:
-                    # rest_api_resp: Optional[FundingInfo] = await self._connector.get_funding_info_from_rest_api(
-                    #     trading_pair
-                    # )
-                    # if rest_api_resp:
-                    #     self._latest_funding_info[trading_pair] = rest_api_resp
-                    #     return rest_api_resp
-                    # else:
-                    continue
-            except Exception as e:
-                self.logger().error(f"Error getting funding info for {trading_pair}: {str(e)}")
+        rest_api_resp: Optional[FundingInfo] = await self._connector.get_funding_info_from_rest_api(trading_pair)
+        while rest_api_resp is None:
+            self.logger().warning(
+                "MyJojoPerpetualAPIOrderBookDataSource.get_funding_info cannot get funding info from REST API"
+            )
+            await asyncio.sleep(2)
+            rest_api_resp: FundingInfo = await self._connector.get_funding_info_from_rest_api(trading_pair)
+        return rest_api_resp
 
     async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
-        while True:
-            try:
-                order_book_message: OrderBookMessage = await self._message_queue[
-                    self._snapshot_messages_queue_key
-                ].get()
-                # store orderbook message first
-                self._latest_order_book_snapshots[order_book_message.trading_pair] = order_book_message
-                # return the order book snapshot if it matches the trading pair
-                order_book_snapshot = self._latest_order_book_snapshots.get(trading_pair)
-                if order_book_snapshot is not None:
-                    return order_book_snapshot
-                else:
-                    continue
-            except Exception as e:
-                self.logger().error(f"Error getting order book snapshot for {trading_pair}: {str(e)}")
+        exchange_symbol = await self._connector.exchange_symbol_associated_to_pair(trading_pair)
+        params = {"marketId": exchange_symbol, "limit": 1000}
+        raw_orderbook_msg = await self._connector._api_get(path_url=CONSTANTS.ORDERBOOK_URL, params=params)
+        order_book_message: OrderBookMessage = OrderBookMessage(
+            OrderBookMessageType.SNAPSHOT,
+            {
+                "trading_pair": trading_pair,
+                "update_id": raw_orderbook_msg["sequence"],
+                "bids": raw_orderbook_msg["bids"],
+                "asks": raw_orderbook_msg["asks"],
+            },
+            timestamp=self._connector._time_synchronizer.time(),
+        )
+        return order_book_message
+        # while True:
+        #     try:
+        #         order_book_message: OrderBookMessage = await self._message_queue[
+        #             self._snapshot_messages_queue_key
+        #         ].get()
+        #         # store orderbook message first
+        #         self._latest_order_book_snapshots[order_book_message.trading_pair] = order_book_message
+        #         # return the order book snapshot if it matches the trading pair
+        #         order_book_snapshot = self._latest_order_book_snapshots.get(trading_pair)
+        #         if order_book_snapshot is not None:
+        #             return order_book_snapshot
+        #         else:
+        #             continue
+        #     except:
+        #         self.logger().error(f"Error getting order book snapshot for {trading_pair}: {traceback.format_exc()}")

@@ -48,7 +48,7 @@ EXCHANGE_INFO_URL = f"/{API_VERSION}/exchangeInfo"
 ORDERBOOK_URL = f"/{API_VERSION}/orderbook"
 TRADES_URL = f"/{API_VERSION}/trades"
 KLINES_URL = f"/{API_VERSION}/klines"
-# MARK_PRICE_KLINES_URL = f"{API_VERSION}/markPriceKlines"
+MARK_PRICE_KLINES_URL = f"{API_VERSION}/markPriceKlines"
 FUNDING_RATE_URL = f"/{API_VERSION}/fundingRate"
 # private http api
 ACCOUNT_URL = f"/{API_VERSION}/account"

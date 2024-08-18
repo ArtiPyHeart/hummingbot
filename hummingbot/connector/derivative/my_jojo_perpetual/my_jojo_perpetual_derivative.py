@@ -109,10 +109,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return 28800
 
     async def get_kline_from_rest_api(self, trading_pair: str, interval: str = "1M"):
-        full_url = web_utils.public_rest_url(CONSTANTS.KLINES_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
         request_params = {"marketId": exchange_symbol, "interval": interval, "limit": 1}
-        response = await self._api_get(path_url=full_url, params=request_params, return_err=True)
+        response = await self._api_get(path_url=CONSTANTS.KLINES_URL, params=request_params, return_err=True)
         if isinstance(response, list) and len(response) > 0:
             """
             {
@@ -130,10 +129,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             return None
 
     async def get_funding_info_from_rest_api(self, trading_pair: str) -> Optional[FundingInfo]:
-        full_url = web_utils.public_rest_url(CONSTANTS.FUNDING_RATE_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
         request_params = {"marketId": exchange_symbol, "limit": 1}
-        response = await self._api_get(path_url=full_url, params=request_params, return_err=True)
+        response = await self._api_get(path_url=CONSTANTS.FUNDING_RATE_URL, params=request_params, return_err=True)
         kline = await self.get_kline_from_rest_api(trading_pair)
         if isinstance(response, list) and len(response) > 0 and kline:
             """
@@ -169,7 +167,8 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             self.logger().error(f"Error initializing trading pair symbol map: {str(e)}")
 
     async def _make_network_check_request(self):
-        return self._api_get(path_url=self.check_network_request_path)
+        res = await self._api_get(path_url=self.check_network_request_path)
+        return res
 
     def supported_order_types(self) -> List[OrderType]:
         return [OrderType.LIMIT, OrderType.MARKET]
@@ -239,7 +238,6 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             time_in_force=time_in_force,
             expiration=expiration,
         )
-        order_url = web_utils.private_rest_url(CONSTANTS.ORDER_URL, domain=self.name)
         request_params = {
             "marketId": exchange_symbol,
             "side": side,
@@ -256,7 +254,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                 request_params["timeInForce"] = CONSTANTS.TimeInForce.GTC
             else:
                 request_params["expiration"] = expiration
-        response = await self._api_post(path_url=order_url, data=request_params, is_auth_required=True, return_err=True)
+        response = await self._api_post(
+            path_url=CONSTANTS.ORDER_URL, data=request_params, is_auth_required=True, return_err=True
+        )
         order_id = response["id"]
         order_time = response["createdAt"] / 1000
         return order_id, order_time
@@ -271,7 +271,6 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         time_in_force: CONSTANTS.TimeInForce = CONSTANTS.TimeInForce.GTC,
         expiration: Optional[int] = None,
     ):
-        full_url = web_utils.private_rest_url(CONSTANTS.ORDER_BUILD_URL, domain=self.name)
         request_params = {
             "marketId": exchange_symbol,
             "side": side,
@@ -285,7 +284,9 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                 request_params["timeInForce"] = CONSTANTS.TimeInForce.GTC
             else:
                 request_params["expiration"] = expiration
-        response = await self._api_post(path_url=full_url, data=request_params, is_auth_required=True, return_err=True)
+        response = await self._api_post(
+            path_url=CONSTANTS.ORDER_BUILD_URL, data=request_params, is_auth_required=True, return_err=True
+        )
         """
         {'gasFeeQuotation': 'some hash',
          'order': {'creditAmount': '-40000000',
@@ -301,11 +302,10 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return response
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
-        cancel_url = web_utils.private_rest_url(CONSTANTS.ORDER_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(tracked_order.trading_pair)
         request_params = {"orderId": order_id, "marketId": exchange_symbol}
         response_msg = await self._api_delete(
-            path_url=cancel_url, params=request_params, is_auth_required=True, return_err=True
+            path_url=CONSTANTS.ORDER_URL, params=request_params, is_auth_required=True, return_err=True
         )
         if response_msg:
             self.logger().error(f"Cancel order failed: {response_msg = }")
@@ -328,11 +328,10 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
         return funding_time, funding_info.rate, payment
 
     async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
-        open_order_url = web_utils.private_rest_url(CONSTANTS.OPEN_ORDER_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(tracked_order.trading_pair)
         request_params = {"orderId": tracked_order.exchange_order_id, "marketId": exchange_symbol}
         response = await self._api_get(
-            path_url=open_order_url, params=request_params, is_auth_required=True, return_err=True
+            path_url=CONSTANTS.OPEN_ORDER_URL, params=request_params, is_auth_required=True, return_err=True
         )
         if "code" in response:
             # error
@@ -350,11 +349,10 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             )
 
     async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
-        trades_url = web_utils.private_rest_url(CONSTANTS.USER_TRADES_URL, domain=self.name)
         exchange_symbol = await self.exchange_symbol_associated_to_pair(order.trading_pair)
         request_params = {"fromId": order.exchange_order_id, "marketId": exchange_symbol}
         response = await self._api_get(
-            path_url=trades_url, params=request_params, is_auth_required=True, return_err=True
+            path_url=CONSTANTS.USER_TRADES_URL, params=request_params, is_auth_required=True, return_err=True
         )
         if "code" in response:
             self.logger().error(f"Error fetching trade updates: {response = }")
@@ -440,23 +438,22 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
                     self._raw_positions_websocket = event_message["positions"]
 
                 elif event_message["event"] == "INCOME_UPDATE":
-                    async with self._mapping_initialization_lock:
-                        incomes = event_message["incomes"]
-                        for income in incomes:
-                            trading_pair = await self.trading_pair_associated_to_exchange_symbol(income["marketId"])
-                            if income["type"] == "FUNDING_FEE":
-                                old_funding_fee = self._raw_funding_fees_websocket.get(trading_pair, None)
-                                if old_funding_fee["time"] < income["time"] or old_funding_fee is None:
-                                    """
-                                    income = {
-                                        "id": 1289,
-                                        "type": "FUNDING_FEE",
-                                        "amount": "-17.032035",
-                                        "time": 1656000030678,
-                                        "marketId": "btcusdc"
-                                    }
-                                    """
-                                    self._raw_funding_fees_websocket[trading_pair] = income
+                    incomes = event_message["incomes"]
+                    for income in incomes:
+                        trading_pair = await self.trading_pair_associated_to_exchange_symbol(income["marketId"])
+                        if income["type"] == "FUNDING_FEE":
+                            old_funding_fee = self._raw_funding_fees_websocket.get(trading_pair, None)
+                            if old_funding_fee["time"] < income["time"] or old_funding_fee is None:
+                                """
+                                income = {
+                                    "id": 1289,
+                                    "type": "FUNDING_FEE",
+                                    "amount": "-17.032035",
+                                    "time": 1656000030678,
+                                    "marketId": "btcusdc"
+                                }
+                                """
+                                self._raw_funding_fees_websocket[trading_pair] = income
 
                 elif event_message["event"] == "ORDER_UPDATE":
                     timestamp = event_message["timestamp"] / 1000
@@ -533,12 +530,54 @@ class MyJojoPerpetualDerivative(PerpetualDerivativePyBase):
             else:
                 return
 
+    async def _get_raw_balance_and_positions(self):
+        balance_and_positions = await self._api_get(
+            path_url=CONSTANTS.BALANCES_URL,
+            is_auth_required=True,
+        )
+        return balance_and_positions
+
     async def _update_balances(self):
-        self._account_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["netValue"])
-        self._account_available_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["availableMargin"])
+        if self._raw_balances_websocket is None or self._raw_positions_websocket is None:
+            balance_and_positions = await self._get_raw_balance_and_positions()
+            self._account_balances[CONSTANTS.CURRENCY] = Decimal(balance_and_positions["balances"]["netValue"])
+            self._account_available_balances[CONSTANTS.CURRENCY] = Decimal(
+                balance_and_positions["balances"]["availableMargin"]
+            )
+        else:
+            self._account_balances[CONSTANTS.CURRENCY] = Decimal(self._raw_balances_websocket["netValue"])
+            self._account_available_balances[CONSTANTS.CURRENCY] = Decimal(
+                self._raw_balances_websocket["availableMargin"]
+            )
 
     async def _update_positions(self):
-        async with self._mapping_initialization_lock:
+        if self._raw_positions_websocket is None:
+            balance_and_positions = await self._api_get(
+                path_url=CONSTANTS.BALANCES_URL,
+                is_auth_required=True,
+            )
+            leverage = balance_and_positions["balances"]["leverage"]
+            positions = balance_and_positions["positions"]
+            for p_info in positions:
+                trading_pair = await self._trading_pair_associated_to_exchange_symbol(p_info["marketId"])
+                position_side = PositionSide.LONG if p_info["side"] == "LONG" else PositionSide.SHORT
+                pos_key = self._perpetual_trading.position_key(trading_pair, position_side)
+                if p_info["status"] == "OPEN":
+                    unrealized_pnl = Decimal(p_info["unrealizedPnl"])
+                    entry_price = Decimal(p_info["entryPrice"])
+                    amount = Decimal(p_info["size"])
+                    _position = Position(
+                        trading_pair=pos_key,
+                        position_side=position_side,
+                        unrealized_pnl=unrealized_pnl,
+                        entry_price=entry_price,
+                        amount=amount,
+                        leverage=leverage,
+                    )
+                    self._perpetual_trading.set_position(pos_key, _position)
+                else:
+                    self._perpetual_trading.remove_position(pos_key)
+        else:
             leverage = Decimal(self._raw_balances_websocket["leverage"])
             for p_info in self._raw_positions_websocket:
                 trading_pair = await self.trading_pair_associated_to_exchange_symbol(p_info["symbol"])
