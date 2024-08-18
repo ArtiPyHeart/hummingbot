@@ -33,7 +33,8 @@ async def main():
     market_channel = f"{exchange_symbol}@market"
     orderbook_channel = f"{exchange_symbol}@orderbook"
     trade_channel = f"{exchange_symbol}@trade"
-    payload["params"].extend([market_channel, orderbook_channel, trade_channel])
+    kline_channel = f"{exchange_symbol}@kline1M"
+    payload["params"].extend([market_channel, orderbook_channel, trade_channel, kline_channel])
 
     await ws_assistant.send(WSJSONRequest(payload=payload))
 
