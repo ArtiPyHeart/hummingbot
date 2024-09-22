@@ -23,14 +23,15 @@ class FormatStatusExample(ScriptStrategyBase):
         warning_lines.extend(self.network_warning(self.get_market_trading_pair_tuples()))
 
         balance_df = self.get_balance_df()
-        self.logger().info(balance_df)
+        # self.logger().info(balance_df)
         lines.extend(["", "  Balances:"] + ["    " + line for line in balance_df.to_string(index=False).split("\n")])
-        market_status_df = self.get_market_status_df_with_depth()
-        self.logger().info(market_status_df)
-        lines.extend(
-            ["", "  Market Status Data Frame:"]
-            + ["    " + line for line in market_status_df.to_string(index=False).split("\n")]
-        )
+
+        # market_status_df = self.get_market_status_df_with_depth()
+        # self.logger().info(market_status_df)
+        # lines.extend(
+        #     ["", "  Market Status Data Frame:"]
+        #     + ["    " + line for line in market_status_df.to_string(index=False).split("\n")]
+        # )
 
         warning_lines.extend(self.balance_warning(self.get_market_trading_pair_tuples()))
         if len(warning_lines) > 0:
