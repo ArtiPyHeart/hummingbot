@@ -17,10 +17,11 @@ from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
 
 class AvellanedaMarketMakingSpotConfig(BaseClientModel):
-    exchange: str = Field("binance_paper_trade", client_data=ClientFieldData(prompt=lambda x: "交易所名称"))
+    exchange: str = Field("bybit", client_data=ClientFieldData(prompt=lambda x: "交易所名称"))
     trading_pair: str = Field("ETH-USDT", client_data=ClientFieldData(prompt=lambda x: "交易对"))
     order_amount: Decimal = Field(0.05, client_data=ClientFieldData(prompt=lambda x: "订单数量"))
     order_refresh_time: int = Field(60, client_data=ClientFieldData(prompt=lambda x: "订单刷新时间(秒)"))
+    min_spread: Decimal = Field(0, client_data=ClientFieldData(prompt=lambda x: "最小价差"))
     risk_factor: Decimal = Field(1, client_data=ClientFieldData(prompt=lambda x: "风险因子(γ)"))
     inventory_target_base_pct: Decimal = Field(50, client_data=ClientFieldData(prompt=lambda x: "目标库存百分比"))
     eta: Decimal = Field(1, ge=0, le=1, client_data=ClientFieldData(prompt=lambda x: "订单尺寸调整系数"))
@@ -125,6 +126,12 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
 
         self.optimal_ask = self.reservation_price + self.optimal_spread / Decimal("2")
         self.optimal_bid = self.reservation_price - self.optimal_spread / Decimal("2")
+        min_spread = mid_price / 100 * self.config.min_spread
+        max_limit_bid = mid_price - min_spread / Decimal("2")
+        min_limit_ask = mid_price + min_spread / Decimal("2")
+
+        self.optimal_ask = max(self.optimal_ask, min_limit_ask)
+        self.optimal_bid = min(self.optimal_bid, max_limit_bid)
 
     def create_proposal(self) -> list[OrderCandidate]:
         buy_order = OrderCandidate(
