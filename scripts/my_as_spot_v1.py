@@ -1,19 +1,114 @@
 import logging
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict
 
+import numpy as np
 from pydantic import Field
+from scipy.optimize import curve_fit
 
 from hummingbot.client.config.config_data_types import BaseClientModel, ClientFieldData
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.core.data_type.common import OrderType, PriceType, TradeType
+from hummingbot.core.data_type.order_book import OrderBook
 from hummingbot.core.data_type.order_candidate import OrderCandidate
 from hummingbot.core.event.events import OrderFilledEvent
 from hummingbot.strategy.__utils__.trailing_indicators.instant_volatility import InstantVolatilityIndicator
-from hummingbot.strategy.__utils__.trailing_indicators.trading_intensity import TradingIntensityIndicator
 from hummingbot.strategy.order_book_asset_price_delegate import OrderBookAssetPriceDelegate
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
+
+
+class NewTradingIntensityIndicator:
+    def __init__(self, exchange: ExchangePyBase, trading_pair: str, sampling_length: int = 100):
+        self.exchange = exchange
+        self.trading_pair = trading_pair
+        self.sampling_length = sampling_length + 1
+        self.alpha = Decimal("0")
+        self.kappa = Decimal("0")
+        self.order_book: OrderBook = self.exchange.get_order_book(self.trading_pair)  # 获取订单簿对象
+        self._prices = []
+        self._volumes = []
+        self._price_levels = []
+
+    def update_prices(self, price):
+        self._prices.append(price)
+        if len(self._prices) > self.sampling_length:
+            # fmt: off
+            self._prices = self._prices[-self.sampling_length:]
+            # fmt: on
+
+    def update_volumes(self, volume):
+        if volume == 0:
+            volume = 10**-10
+        self._volumes.append(volume)
+        if len(self._volumes) > self.sampling_length:
+            # fmt: off
+            self._volumes = self._volumes[-self.sampling_length:]
+            # fmt: on
+
+    def update_price_levels(self, price):
+        mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
+        price_level = price - mid_price
+        self._price_levels.append(price_level)
+        if len(self._price_levels) > self.sampling_length:
+            # fmt: off
+            self._price_levels = self._price_levels[-self.sampling_length:]
+            # fmt: on
+
+    def get_last_volume(self, price):
+        if len(self._prices) > 0:
+            last_price = self._prices[-1]
+            if last_price > price:
+                current_volume = self.order_book.get_volume_for_price(False, price)
+            elif last_price < price:
+                current_volume = self.order_book.get_volume_for_price(True, price)
+            else:
+                current_volume = 0
+        else:
+            current_volume = 0
+        return current_volume
+
+    def is_ready(self):
+        if len(self._prices) >= self.sampling_length:
+            return True
+        else:
+            return False
+
+    def update(self):
+        last_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.LastTrade)
+        last_volume = self.get_last_volume(last_price)
+        self.update_prices(last_price)
+        self.update_volumes(last_volume)
+        self.update_price_levels(last_price)
+
+    def calculate_alpha_kappa(self):
+        # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
+        if len(self._price_levels) >= 3:
+
+            def exp_func(x, a, b):
+                return a * np.exp(-b * x)
+
+            price_level_list = np.array(self._price_levels[1:], dtype=np.float64)
+            volume_list = np.array(self._volumes[1:], dtype=np.float64)
+
+            try:
+                popt, _ = curve_fit(
+                    exp_func,
+                    price_level_list,
+                    volume_list,
+                    p0=(self.alpha, self.kappa),
+                    method="dogbox",
+                    bounds=([0, 0], [np.inf, np.inf]),
+                )
+                self.alpha = Decimal(str(popt[0]))
+                self.kappa = Decimal(str(popt[1]))
+            except RuntimeError:
+                # 拟合失败，重置参数
+                self.alpha = Decimal("0")
+                self.kappa = Decimal("0")
+        else:
+            self.alpha = Decimal("0")
+            self.kappa = Decimal("0")
 
 
 class AvellanedaMarketMakingSpotConfig(BaseClientModel):
@@ -49,7 +144,11 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
 
         self.avg_vol = InstantVolatilityIndicator(sampling_length=self.config.volatility_buffer_size)
         self.price_delegate = OrderBookAssetPriceDelegate(self.current_market, self.config.trading_pair)
-        self.trading_intensity: Optional[TradingIntensityIndicator] = None
+        self.trading_intensity: NewTradingIntensityIndicator = NewTradingIntensityIndicator(
+            exchange=self.current_market,
+            trading_pair=self.config.trading_pair,
+            sampling_length=self.config.trading_intensity_buffer_size,
+        )
         self.reservation_price = Decimal("0")
         self.optimal_spread = Decimal("0")
         self.optimal_ask = Decimal("0")
@@ -57,6 +156,12 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self._alpha = Decimal("0")
         self._kappa = Decimal("0")
         self._q = 0
+
+        self.trading_intensity = NewTradingIntensityIndicator(
+            exchange=self.current_market,
+            trading_pair=self.config.trading_pair,
+            sampling_length=self.config.trading_intensity_buffer_size,
+        )
 
     @property
     def current_market(self) -> ExchangePyBase:
@@ -72,7 +177,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
 
     def on_tick(self):
         self.update_avg_vol()
-        self.update_trading_intensity()
+        self.trading_intensity.update()
         if self.is_avg_vol_ready() and self.is_trading_intensity_ready():
             if self.create_timestamp <= self.current_timestamp:
                 self.cancel_all_orders()
@@ -83,8 +188,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
                 self.create_timestamp = self.current_timestamp + self.config.order_refresh_time
         else:
             self.logger().warning(f"波动率指标：{self.is_avg_vol_ready()}")
-            if self.trading_intensity is not None:
-                self.logger().warning(f"交易强度指标：{self.trading_intensity.current_sample_length = }")
+            self.logger().warning(f"交易强度指标：{len(self.trading_intensity._volumes) = }")
 
     def is_avg_vol_ready(self) -> bool:
         return self.avg_vol.is_sampling_buffer_full
@@ -93,23 +197,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self.avg_vol.add_sample(self.current_mid_price)
 
     def is_trading_intensity_ready(self) -> bool:
-        if self.trading_intensity is None:
-            return False
-        return self.trading_intensity.is_sampling_buffer_full
-
-    def update_trading_intensity(self):
-        if self.trading_intensity is None:
-            if self.current_market.ready:
-                self.trading_intensity = TradingIntensityIndicator(
-                    order_book=self.current_market.get_order_book(self.config.trading_pair),
-                    price_delegate=self.price_delegate,
-                    sampling_length=self.config.trading_intensity_buffer_size,
-                )
-        else:
-            self.trading_intensity.calculate(self.current_timestamp)
-            alpha, kappa = self.trading_intensity.current_value
-            self._alpha = Decimal(str(alpha))
-            self._kappa = Decimal(str(kappa))
+        return self.trading_intensity.is_ready()
 
     def calculate_reservation_price_and_optimal_spread(self):
         mid_price = self.current_mid_price
