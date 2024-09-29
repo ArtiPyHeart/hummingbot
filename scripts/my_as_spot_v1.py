@@ -38,6 +38,10 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
     尝试在原来Avellaneda-Stoikov现货做市策略的基础上进行复现(无限时间跨度版本)
     """
 
+    @classmethod
+    def init_markets(cls, config: AvellanedaMarketMakingSpotConfig):
+        cls.markets = {config.exchange: {config.trading_pair}}
+
     def __init__(self, connectors: Dict[str, ConnectorBase], config: AvellanedaMarketMakingSpotConfig):
         super().__init__(connectors)
         self.config = config
@@ -53,10 +57,6 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self._alpha = Decimal("0")
         self._kappa = Decimal("0")
         self._q = 0
-
-    @property
-    def markets(self):
-        return {self.config.exchange: {self.config.trading_pair}}
 
     @property
     def current_market(self) -> ExchangePyBase:
