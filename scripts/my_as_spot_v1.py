@@ -73,7 +73,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
     def on_tick(self):
         self.update_avg_vol()
         self.update_trading_intensity()
-        if self.is_avg_vol_ready() and self.trading_intensity_length():
+        if self.is_avg_vol_ready() and self.is_trading_intensity_ready():
             if self.create_timestamp <= self.current_timestamp:
                 self.cancel_all_orders()
                 self.calculate_reservation_price_and_optimal_spread()
@@ -83,7 +83,9 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
                 self.create_timestamp = self.current_timestamp + self.config.order_refresh_time
         else:
             self.logger().warning(f"波动率指标：{self.is_avg_vol_ready()}")
-            self.logger().warning(f"交易强度指标：{self.trading_intensity_length()}")
+            self.logger().warning(
+                f"({self.current_market.ready = })交易强度指标({self.trading_intensity is not None})：{self.is_trading_intensity_ready()}"
+            )
 
     def is_avg_vol_ready(self) -> bool:
         return self.avg_vol.is_sampling_buffer_full
@@ -91,20 +93,21 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
     def update_avg_vol(self):
         self.avg_vol.add_sample(self.current_mid_price)
 
-    def trading_intensity_length(self) -> bool:
+    def is_trading_intensity_ready(self) -> bool:
         if self.trading_intensity is None:
             return False
         else:
             return self.trading_intensity.is_sampling_buffer_full
 
     def update_trading_intensity(self):
-        if self.trading_intensity is None and self.current_market.ready:
-            self.trading_intensity = TradingIntensityIndicator(
-                order_book=self.current_market.get_order_book(self.config.trading_pair),
-                price_delegate=self.price_delegate,
-                sampling_length=self.config.trading_intensity_buffer_size,
-            )
-        if self.trading_intensity:
+        if self.trading_intensity is None:
+            if self.current_market.ready:
+                self.trading_intensity = TradingIntensityIndicator(
+                    order_book=self.current_market.get_order_book(self.config.trading_pair),
+                    price_delegate=self.price_delegate,
+                    sampling_length=self.config.trading_intensity_buffer_size,
+                )
+        else:
             self.trading_intensity.calculate(self.current_timestamp)
             alpha, kappa = self.trading_intensity.current_value
             self._alpha = Decimal(str(alpha))
