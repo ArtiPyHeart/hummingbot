@@ -1,4 +1,5 @@
 import logging
+import traceback
 from decimal import Decimal
 from typing import Dict
 
@@ -29,7 +30,6 @@ class NewTradingIntensityIndicator:
         self.kappa = Decimal("0")
         self._prices = []
         self._volumes = []
-        self._price_levels = []
 
     @property
     def order_book(self) -> OrderBook:
@@ -49,15 +49,6 @@ class NewTradingIntensityIndicator:
         if len(self._volumes) > self.sampling_length:
             # fmt: off
             self._volumes = self._volumes[-self.sampling_length:]
-            # fmt: on
-
-    def update_price_levels(self, price):
-        mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
-        price_level = price - mid_price
-        self._price_levels.append(price_level)
-        if len(self._price_levels) > self.sampling_length:
-            # fmt: off
-            self._price_levels = self._price_levels[-self.sampling_length:]
             # fmt: on
 
     def get_last_volume(self, price):
@@ -86,16 +77,15 @@ class NewTradingIntensityIndicator:
         last_volume = self.get_last_volume(last_price)
         self.update_prices(last_price)
         self.update_volumes(last_volume)
-        self.update_price_levels(last_price)
 
     def calculate_alpha_kappa(self):
         # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
-        if len(self._price_levels) >= 3:
+        if len(self._prices) >= 3:
 
             def exp_func(x, a, b):
                 return a * np.exp(-b * x)
 
-            price_level_list = np.array(self._price_levels[1:], dtype=np.float64)
+            price_level_list = np.array(self._prices[1:], dtype=np.float64)
             volume_list = np.array(self._volumes[1:], dtype=np.float64)
 
             try:
@@ -110,6 +100,7 @@ class NewTradingIntensityIndicator:
                 self.alpha = Decimal(str(popt[0]))
                 self.kappa = Decimal(str(popt[1]))
             except RuntimeError:
+                self.logger.warning(f"{traceback.format_exc()}")
                 # 拟合失败，重置参数
                 self.alpha = Decimal("0")
                 self.kappa = Decimal("0")
