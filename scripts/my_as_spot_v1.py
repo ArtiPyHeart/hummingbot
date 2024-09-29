@@ -38,17 +38,13 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
     尝试在原来Avellaneda-Stoikov现货做市策略的基础上进行复现(无限时间跨度版本)
     """
 
-    @classmethod
-    def init_markets(cls, config: AvellanedaMarketMakingSpotConfig):
-        cls.markets = {config.exchange: {config.trading_pair}}
-
     def __init__(self, connectors: Dict[str, ConnectorBase], config: AvellanedaMarketMakingSpotConfig):
         super().__init__(connectors)
         self.config = config
         self.create_timestamp = 0
 
         self.avg_vol = InstantVolatilityIndicator(sampling_length=self.config.volatility_buffer_size)
-        self.price_delegate = OrderBookAssetPriceDelegate(self.market, self.config.trading_pair)
+        self.price_delegate = OrderBookAssetPriceDelegate(self.current_market, self.config.trading_pair)
         self.trading_intensity: Optional[TradingIntensityIndicator] = None
         self.reservation_price = Decimal("0")
         self.optimal_spread = Decimal("0")
@@ -59,7 +55,11 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self._q = 0
 
     @property
-    def market(self) -> ExchangePyBase:
+    def markets(self):
+        return {self.config.exchange: {self.config.trading_pair}}
+
+    @property
+    def current_market(self) -> ExchangePyBase:
         return self.connectors[self.config.exchange]
 
     @property
@@ -68,7 +68,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
 
     @property
     def current_mid_price(self) -> Decimal:
-        return self.market.get_price_by_type(self.config.trading_pair, PriceType.MidPrice)
+        return self.current_market.get_price_by_type(self.config.trading_pair, PriceType.MidPrice)
 
     def on_tick(self):
         self.update_avg_vol()
@@ -98,9 +98,9 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
             return self.trading_intensity.is_sampling_buffer_full
 
     def update_trading_intensity(self):
-        if self.trading_intensity is None and self.market.ready:
+        if self.trading_intensity is None and self.current_market.ready:
             self.trading_intensity = TradingIntensityIndicator(
-                order_book=self.market.get_order_book(self.config.trading_pair),
+                order_book=self.current_market.get_order_book(self.config.trading_pair),
                 price_delegate=self.price_delegate,
                 sampling_length=self.config.trading_intensity_buffer_size,
             )
@@ -114,8 +114,8 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         mid_price = self.current_mid_price
 
         # 计算库存偏差
-        base_balance = self.market.get_available_balance(self.config.trading_pair.split("-")[0])
-        quote_balance = self.market.get_available_balance(self.config.trading_pair.split("-")[1])
+        base_balance = self.current_market.get_available_balance(self.config.trading_pair.split("-")[0])
+        quote_balance = self.current_market.get_available_balance(self.config.trading_pair.split("-")[1])
         total_inventory_in_base = base_balance + quote_balance / mid_price
         inventory_target = total_inventory_in_base * (self.config.inventory_target_base_pct / Decimal("100"))
         self._q = (base_balance - inventory_target) / total_inventory_in_base
@@ -157,7 +157,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         return [buy_order, sell_order]
 
     def adjust_proposal_to_budget(self, proposal: list[OrderCandidate]) -> list[OrderCandidate]:
-        return self.market.budget_checker.adjust_candidates(proposal, all_or_none=True)
+        return self.current_market.budget_checker.adjust_candidates(proposal, all_or_none=True)
 
     def place_orders(self, proposal: list[OrderCandidate]) -> None:
         for order in proposal:
