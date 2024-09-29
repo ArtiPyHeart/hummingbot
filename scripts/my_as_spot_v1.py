@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 from pydantic import Field
 
@@ -83,7 +83,8 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
                 self.create_timestamp = self.current_timestamp + self.config.order_refresh_time
         else:
             self.logger().warning(f"波动率指标：{self.is_avg_vol_ready()}")
-            self.logger().warning(f"交易强度指标：{self.trading_intensity_status() = }")
+            if self.trading_intensity is not None:
+                self.logger().warning(f"交易强度指标：{self.trading_intensity.current_sample_length = }")
 
     def is_avg_vol_ready(self) -> bool:
         return self.avg_vol.is_sampling_buffer_full
@@ -95,12 +96,6 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         if self.trading_intensity is None:
             return False
         return self.trading_intensity.is_sampling_buffer_full
-
-    def trading_intensity_status(self) -> Tuple[float, float]:
-        if self.trading_intensity is None:
-            return -1, -1
-        else:
-            return self.trading_intensity.current_value
 
     def update_trading_intensity(self):
         if self.trading_intensity is None:
