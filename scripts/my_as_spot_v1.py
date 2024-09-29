@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from pydantic import Field
 
@@ -71,7 +71,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         return self.market.get_price_by_type(self.config.trading_pair, PriceType.MidPrice)
 
     def on_tick(self):
-        if self.is_avg_vol_ready() and self.is_trading_intensity_ready():
+        if self.avg_vol_length() and self.trading_intensity_length():
             self.update_avg_vol()
             self.update_trading_intensity()
             if self.create_timestamp <= self._current_timestamp:
@@ -82,16 +82,17 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
                 self.place_orders(proposal_adjusted)
                 self.create_timestamp = self._current_timestamp + self.config.order_refresh_time
         else:
-            self.logger().warning(f"波动率指标就绪：{self.is_avg_vol_ready()}")
-            self.logger().warning(f"交易强度指标就绪：{self.is_trading_intensity_ready()}")
+            self.avg_vol_length()
+            self.logger().warning(f"波动率指标：{self.avg_vol_length() = }")
+            self.logger().warning(f"交易强度指标就绪：{self.trading_intensity_length()}")
 
-    def is_avg_vol_ready(self) -> bool:
-        return self.avg_vol.is_sampling_buffer_full
+    def avg_vol_length(self) -> Tuple[int, int]:
+        return self.avg_vol.sampling_length, self.avg_vol.processing_length
 
     def update_avg_vol(self):
         self.avg_vol.add_sample(self.current_mid_price)
 
-    def is_trading_intensity_ready(self) -> bool:
+    def trading_intensity_length(self) -> bool:
         if self.trading_intensity is None:
             return False
         else:
