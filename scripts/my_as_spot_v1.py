@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Dict
 
 import numpy as np
+import pandas as pd
 from pydantic import Field
 from scipy.optimize import curve_fit
 
@@ -19,7 +20,8 @@ from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
 
 class NewTradingIntensityIndicator:
-    def __init__(self, exchange: ExchangePyBase, trading_pair: str, sampling_length: int = 100):
+    def __init__(self, logger, exchange: ExchangePyBase, trading_pair: str, sampling_length: int = 100):
+        self.logger = logger
         self.exchange = exchange
         self.trading_pair = trading_pair
         self.sampling_length = sampling_length + 1
@@ -66,6 +68,8 @@ class NewTradingIntensityIndicator:
                 current_volume = 0
         else:
             current_volume = 0
+        if pd.isna(current_volume):
+            self.logger.warning(f"{self.trading_pair}价格{price}的成交量为NaN")
         return current_volume
 
     def is_ready(self):
@@ -145,6 +149,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self.avg_vol = InstantVolatilityIndicator(sampling_length=self.config.volatility_buffer_size)
         self.price_delegate = OrderBookAssetPriceDelegate(self.current_market, self.config.trading_pair)
         self.trading_intensity: NewTradingIntensityIndicator = NewTradingIntensityIndicator(
+            self.logger(),
             exchange=self.current_market,
             trading_pair=self.config.trading_pair,
             sampling_length=self.config.trading_intensity_buffer_size,
