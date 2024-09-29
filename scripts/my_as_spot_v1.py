@@ -27,10 +27,13 @@ class NewTradingIntensityIndicator:
         self.sampling_length = sampling_length + 1
         self.alpha = Decimal("0")
         self.kappa = Decimal("0")
-        self.order_book: OrderBook = self.exchange.get_order_book(self.trading_pair)  # 获取订单簿对象
         self._prices = []
         self._volumes = []
         self._price_levels = []
+
+    @property
+    def order_book(self) -> OrderBook:
+        return self.exchange.get_order_book(self.trading_pair)
 
     def update_prices(self, price):
         self._prices.append(price)
@@ -162,12 +165,6 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self._kappa = Decimal("0")
         self._q = 0
 
-        self.trading_intensity = NewTradingIntensityIndicator(
-            exchange=self.current_market,
-            trading_pair=self.config.trading_pair,
-            sampling_length=self.config.trading_intensity_buffer_size,
-        )
-
     @property
     def current_market(self) -> ExchangePyBase:
         return self.connectors[self.config.exchange]
@@ -181,6 +178,9 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         return self.current_market.get_price_by_type(self.config.trading_pair, PriceType.MidPrice)
 
     def on_tick(self):
+        if not self.current_market.ready:
+            self.logger().warning("交易所未准备好")
+            return
         self.update_avg_vol()
         self.trading_intensity.update()
         if self.is_avg_vol_ready() and self.is_trading_intensity_ready():
