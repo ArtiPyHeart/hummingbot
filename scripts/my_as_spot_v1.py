@@ -74,13 +74,13 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         self.update_avg_vol()
         self.update_trading_intensity()
         if self.is_avg_vol_ready() and self.trading_intensity_length():
-            if self.create_timestamp <= self._current_timestamp:
+            if self.create_timestamp <= self.current_timestamp:
                 self.cancel_all_orders()
                 self.calculate_reservation_price_and_optimal_spread()
                 proposal = self.create_proposal()
                 proposal_adjusted = self.adjust_proposal_to_budget(proposal)
                 self.place_orders(proposal_adjusted)
-                self.create_timestamp = self._current_timestamp + self.config.order_refresh_time
+                self.create_timestamp = self.current_timestamp + self.config.order_refresh_time
         else:
             self.logger().warning(f"波动率指标：{self.is_avg_vol_ready()}")
             self.logger().warning(f"交易强度指标：{self.trading_intensity_length()}")
@@ -105,7 +105,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
                 sampling_length=self.config.trading_intensity_buffer_size,
             )
         if self.trading_intensity:
-            self.trading_intensity.calculate(self._current_timestamp)
+            self.trading_intensity.calculate(self.current_timestamp)
             alpha, kappa = self.trading_intensity.current_value
             self._alpha = Decimal(str(alpha))
             self._kappa = Decimal(str(kappa))
