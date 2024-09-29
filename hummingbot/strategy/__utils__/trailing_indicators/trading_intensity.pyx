@@ -164,7 +164,3 @@ cdef class TradingIntensityIndicator:
             self._alpha = Decimal(str(params[0][0]))
         except (RuntimeError, ValueError) as e:
             pass
-
-    @property
-    def current_sample_length(self) -> int:
-        return len(self._trade_samples.keys())
