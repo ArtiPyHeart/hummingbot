@@ -12,6 +12,7 @@ from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.core.data_type.common import OrderType, PriceType, TradeType
 from hummingbot.core.data_type.order_book import OrderBook
+from hummingbot.core.data_type.order_book_query_result import OrderBookQueryResult
 from hummingbot.core.data_type.order_candidate import OrderCandidate
 from hummingbot.core.event.events import OrderFilledEvent
 from hummingbot.strategy.__utils__.trailing_indicators.instant_volatility import InstantVolatilityIndicator
@@ -76,12 +77,13 @@ class NewTradingIntensityIndicator:
         if len(self._prices) > 0:
             last_price = self._prices[-1]
             is_buy = latest_price > last_price
-            volume = self.order_book.get_volume_for_price(is_buy, float(latest_price))
+            res: OrderBookQueryResult = self.order_book.get_volume_for_price(is_buy, float(latest_price))
+            res_volume = res.result_volume
         else:
-            volume = 0
+            res_volume = 0
 
         self.update_price(latest_price)
-        self.update_volume(volume)
+        self.update_volume(res_volume)
         self.update_price_levels(latest_price)
 
     def calculate_alpha_kappa(self):
