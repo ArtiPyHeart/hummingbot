@@ -26,6 +26,7 @@ class NewTradingIntensityIndicator:
         self, logger, exchange: ExchangePyBase, trading_pair: str, sampling_length: int = 100, debug: bool = False
     ):
         self.logger = logger
+        self.debug = debug
         self.exchange = exchange
         self.trading_pair = trading_pair
         self.sampling_length = sampling_length + 1
