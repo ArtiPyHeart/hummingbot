@@ -69,12 +69,12 @@ class NewTradingIntensityIndicator:
                 self.logger.warning("bids_df and asks_df are BOTH empty!")
 
             if not bids_df.empty:
-                bids_df["price_level"] = (bids_df["price"] - mid_price).astype(str).apply(Decimal)
+                bids_df["price_level"] = bids_df["price"].astype(str).apply(Decimal) - mid_price
                 bids_df.set_index("price_level", inplace=True)
                 bids_res: Dict[Decimal, Dict[str, float]] = bids_df[["price", "amount"]].to_dict(orient="index")
                 self.update_price_levels(bids_res)
             if not asks_df.empty:
-                asks_df["price_level"] = (asks_df["price"] - mid_price).astype(str).apply(Decimal)
+                asks_df["price_level"] = asks_df["price"].astype(str).apply(Decimal) - mid_price
                 asks_df.set_index("price_level", inplace=True)
                 asks_res: Dict[Decimal, Dict[str, float]] = asks_df[["price", "amount"]].to_dict(orient="index")
                 self.update_price_levels(asks_res)
