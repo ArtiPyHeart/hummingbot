@@ -21,25 +21,42 @@ from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
 
 class NewTradingIntensityIndicator:
-    def __init__(self, logger, exchange: ExchangePyBase, trading_pair: str, sampling_length: int = 100):
+    def __init__(
+        self, logger, exchange: ExchangePyBase, trading_pair: str, sampling_length: int = 100, debug: bool = False
+    ):
         self.logger = logger
         self.exchange = exchange
         self.trading_pair = trading_pair
         self.sampling_length = sampling_length + 1
-        self.alpha = Decimal("0")
-        self.kappa = Decimal("0")
+        self._alpha = Decimal("0")
+        self._kappa = Decimal("0")
         self._prices = []
         self._volumes = []
+        self._price_levels = []
 
     @property
     def order_book(self) -> OrderBook:
         return self.exchange.get_order_book(self.trading_pair)
+
+    @property
+    def alpha_and_kappa(self):
+        self.calculate_alpha_kappa()
+        return self._alpha, self._kappa
 
     def update_prices(self, price):
         self._prices.append(price)
         if len(self._prices) > self.sampling_length:
             # fmt: off
             self._prices = self._prices[-self.sampling_length:]
+            # fmt: on
+
+    def update_price_levels(self, price):
+        mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
+        price = price - mid_price
+        self._price_levels.append(price)
+        if len(self._price_levels) > self.sampling_length:
+            # fmt: off
+            self._price_levels = self._price_levels[-self.sampling_length:]
             # fmt: on
 
     def update_volumes(self, volume):
@@ -77,15 +94,16 @@ class NewTradingIntensityIndicator:
         last_volume = self.get_last_volume(last_price)
         self.update_prices(last_price)
         self.update_volumes(last_volume)
+        self.update_price_levels(last_price)
 
     def calculate_alpha_kappa(self):
         # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
-        if len(self._prices) >= 3:
+        if len(self._price_levels) >= 3:
 
             def exp_func(x, a, b):
                 return a * np.exp(-b * x)
 
-            price_level_list = np.array(self._prices[1:], dtype=np.float64)
+            price_level_list = np.array(self._price_levels[1:], dtype=np.float64)
             volume_list = np.array(self._volumes[1:], dtype=np.float64)
 
             try:
@@ -93,20 +111,22 @@ class NewTradingIntensityIndicator:
                     exp_func,
                     price_level_list,
                     volume_list,
-                    p0=(self.alpha, self.kappa),
+                    p0=(self._alpha, self._kappa),
                     method="dogbox",
                     bounds=([0, 0], [np.inf, np.inf]),
                 )
-                self.alpha = Decimal(str(popt[0]))
-                self.kappa = Decimal(str(popt[1]))
+                self._alpha = Decimal(str(popt[0]))
+                self._kappa = Decimal(str(popt[1]))
+                if self.debug:
+                    self.logger.info(f"alpha: {self._alpha}, kappa: {self._kappa}")
             except RuntimeError:
                 self.logger.warning(f"{traceback.format_exc()}")
                 # 拟合失败，重置参数
-                self.alpha = Decimal("0")
-                self.kappa = Decimal("0")
+                self._alpha = Decimal("0")
+                self._kappa = Decimal("0")
         else:
-            self.alpha = Decimal("0")
-            self.kappa = Decimal("0")
+            self._alpha = Decimal("0")
+            self._kappa = Decimal("0")
 
 
 class AvellanedaMarketMakingSpotConfig(BaseClientModel):
@@ -147,6 +167,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
             exchange=self.current_market,
             trading_pair=self.config.trading_pair,
             sampling_length=self.config.trading_intensity_buffer_size,
+            debug=True,
         )
         self.reservation_price = Decimal("0")
         self.optimal_spread = Decimal("0")
@@ -177,6 +198,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         if self.is_avg_vol_ready() and self.is_trading_intensity_ready():
             if self.create_timestamp <= self.current_timestamp:
                 self.cancel_all_orders()
+                self._alpha, self._kappa = self.trading_intensity.alpha_and_kappa
                 self.calculate_reservation_price_and_optimal_spread()
                 proposal = self.create_proposal()
                 proposal_adjusted = self.adjust_proposal_to_budget(proposal)
