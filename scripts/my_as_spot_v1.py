@@ -59,7 +59,7 @@ class NewTradingIntensityIndicator:
             return False
 
     def update(self):
-        if self._history_asks_df is None and self._history_bids_df is None:
+        if self._history_asks_df is None or self._history_bids_df is None:
             # price, amount, update_id
             self._history_bids_df, self._history_asks_df = self.order_book.snapshot
             return
