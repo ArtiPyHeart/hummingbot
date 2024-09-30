@@ -61,8 +61,8 @@ class NewTradingIntensityIndicator:
     def update(self):
         if self._history_asks_df is not None and self._history_bids_df is not None:
             mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
-            bids_df = self._history_bids_df[self._history_bids_df["price"] > mid_price].copy()
-            asks_df = self._history_asks_df[self._history_asks_df["price"] < mid_price].copy()
+            bids_df = self._history_bids_df[self._history_bids_df["price"] >= mid_price].copy()
+            asks_df = self._history_asks_df[self._history_asks_df["price"] <= mid_price].copy()
             if not bids_df.empty and not asks_df.empty:
                 self.logger.warning("bids_df and asks_df are BOTH NOT empty!")
             if bids_df.empty and asks_df.empty:
@@ -81,10 +81,6 @@ class NewTradingIntensityIndicator:
 
         # price, amount, update_id
         self._history_bids_df, self._history_asks_df = self.order_book.snapshot
-
-        if self.debug:
-            self.logger.info(f"{type(self._history_bids_df) = }")
-            self.logger.info(f"{type(self._history_asks_df) = }")
 
     def calculate_alpha_kappa(self):
         # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
