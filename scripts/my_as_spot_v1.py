@@ -102,6 +102,10 @@ class NewTradingIntensityIndicator:
             price_level_list = np.array(list(sorted_price_levels), dtype=np.float64)
             volume_list = np.array(list(sorted_volumes), dtype=np.float64)
 
+            if self.debug:
+                self.logger.info(f"{price_level_list.tolist() = }")
+                self.logger.info(f"{volume_list.tolist() = }")
+
             try:
                 popt, _ = curve_fit(
                     exp_func,
