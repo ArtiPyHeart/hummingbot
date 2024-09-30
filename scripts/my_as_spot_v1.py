@@ -1,8 +1,7 @@
 import logging
 import traceback
-from collections import defaultdict
 from decimal import Decimal
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 from pydantic import Field
@@ -28,13 +27,12 @@ class NewTradingIntensityIndicator:
         self.debug = debug
         self.exchange = exchange
         self.trading_pair = trading_pair
-        self.sampling_length = sampling_length
+        self.sampling_length = sampling_length + 1
         self._alpha = Decimal("0")
         self._kappa = Decimal("0")
-        self._price_levels: List[Dict[Decimal, Dict[str, float]]] = []
-
-        self._history_bids_df = None
-        self._history_asks_df = None
+        self._prices = []
+        self._volumes = []
+        self._price_levels = []
 
     @property
     def order_book(self) -> OrderBook:
@@ -45,8 +43,23 @@ class NewTradingIntensityIndicator:
         self.calculate_alpha_kappa()
         return self._alpha, self._kappa
 
-    def update_price_levels(self, order_book_res: Dict[Decimal, Dict[str, float]]):
-        self._price_levels.append(order_book_res)
+    def update_price(self, price):
+        self._prices.append(price)
+        if len(self._prices) > self.sampling_length:
+            # fmt: off
+            self._prices = self._prices[-self.sampling_length:]
+            # fmt: on
+
+    def update_volume(self, volume):
+        self._volumes.append(volume)
+        if len(self._volumes) > self.sampling_length:
+            # fmt: off
+            self._volumes = self._volumes[-self.sampling_length:]
+            # fmt: on
+
+    def update_price_levels(self, price):
+        mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
+        self._price_levels.append(price - mid_price)
         if len(self._price_levels) > self.sampling_length:
             # fmt: off
             self._price_levels = self._price_levels[-self.sampling_length:]
@@ -59,29 +72,17 @@ class NewTradingIntensityIndicator:
             return False
 
     def update(self):
-        # 可能需要进一步改进
-        if self._history_asks_df is not None and self._history_bids_df is not None:
-            mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
-            bids_df = self._history_bids_df[self._history_bids_df["price"] >= mid_price].copy()
-            asks_df = self._history_asks_df[self._history_asks_df["price"] <= mid_price].copy()
-            if not bids_df.empty and not asks_df.empty:
-                self.logger.warning("bids_df and asks_df are BOTH NOT empty!")
-            if bids_df.empty and asks_df.empty:
-                self.logger.warning("bids_df and asks_df are BOTH empty!")
+        latest_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.LastTrade)
+        if len(self._prices) > 0:
+            last_price = self._prices[-1]
+            is_buy = latest_price > last_price
+            volume = self.order_book.get_volume_for_price(is_buy, float(latest_price))
+        else:
+            volume = 0
 
-            if not bids_df.empty:
-                bids_df["price_level"] = bids_df["price"].astype(str).apply(Decimal) - mid_price
-                bids_df.set_index("price_level", inplace=True)
-                bids_res: Dict[Decimal, Dict[str, float]] = bids_df[["price", "amount"]].to_dict(orient="index")
-                self.update_price_levels(bids_res)
-            if not asks_df.empty:
-                asks_df["price_level"] = asks_df["price"].astype(str).apply(Decimal) - mid_price
-                asks_df.set_index("price_level", inplace=True)
-                asks_res: Dict[Decimal, Dict[str, float]] = asks_df[["price", "amount"]].to_dict(orient="index")
-                self.update_price_levels(asks_res)
-
-        # price, amount, update_id
-        self._history_bids_df, self._history_asks_df = self.order_book.snapshot
+        self.update_price(latest_price)
+        self.update_volume(volume)
+        self.update_price_levels(latest_price)
 
     def calculate_alpha_kappa(self):
         # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
@@ -90,12 +91,8 @@ class NewTradingIntensityIndicator:
             def exp_func(x, a, b):
                 return a * np.exp(-b * x)
 
-            combined = defaultdict(float)
-            for level in self._price_levels:
-                for price_lv, details in level.items():
-                    combined[price_lv] += details["amount"]
-            combined_dict = dict(combined)
-            sorted_combined = sorted(combined_dict.items(), key=lambda x: x[0], reverse=True)
+            combined = list(zip(self._price_levels, self._volumes))
+            sorted_combined = sorted(combined, key=lambda x: x[0], reverse=True)
             sorted_price_levels, sorted_volumes = zip(*sorted_combined)
 
             price_level_list = np.array(list(sorted_price_levels), dtype=np.float64)
@@ -119,7 +116,7 @@ class NewTradingIntensityIndicator:
                 if self.debug:
                     self.logger.info(f"alpha: {self._alpha}, kappa: {self._kappa}")
             except RuntimeError:
-                self.logger.warning(f"{traceback.format_exc()}")
+                self.logger.warning(f"fitting kappa failed: {traceback.format_exc()}")
                 # 拟合失败，重置参数
                 self._alpha = Decimal("0")
                 self._kappa = Decimal("0")
