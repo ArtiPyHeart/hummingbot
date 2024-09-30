@@ -107,8 +107,14 @@ class NewTradingIntensityIndicator:
             def exp_func(x, a, b):
                 return a * np.exp(-b * x)
 
-            price_level_list = np.array(self._price_levels[1:], dtype=np.float64)
-            volume_list = np.array(self._volumes[1:], dtype=np.float64)
+            price_levels = self._price_levels[1:]
+            volumes = self._volumes[1:]
+            combined = list(zip(price_levels, volumes))
+            sorted_combined = sorted(combined, key=lambda x: x[0], reverse=True)
+            sorted_price_levels, sorted_volumes = zip(*sorted_combined)
+
+            price_level_list = np.array(list(sorted_price_levels), dtype=np.float64)
+            volume_list = np.array(list(sorted_volumes), dtype=np.float64)
 
             try:
                 popt, _ = curve_fit(
