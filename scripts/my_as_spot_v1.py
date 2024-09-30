@@ -1,10 +1,10 @@
 import logging
 import traceback
+from collections import defaultdict
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
-import pandas as pd
 from pydantic import Field
 from scipy.optimize import curve_fit
 
@@ -13,7 +13,6 @@ from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.core.data_type.common import OrderType, PriceType, TradeType
 from hummingbot.core.data_type.order_book import OrderBook
-from hummingbot.core.data_type.order_book_query_result import OrderBookQueryResult
 from hummingbot.core.data_type.order_candidate import OrderCandidate
 from hummingbot.core.event.events import OrderFilledEvent
 from hummingbot.strategy.__utils__.trailing_indicators.instant_volatility import InstantVolatilityIndicator
@@ -29,12 +28,13 @@ class NewTradingIntensityIndicator:
         self.debug = debug
         self.exchange = exchange
         self.trading_pair = trading_pair
-        self.sampling_length = sampling_length + 1
+        self.sampling_length = sampling_length
         self._alpha = Decimal("0")
         self._kappa = Decimal("0")
-        self._prices = []
-        self._volumes = []
-        self._price_levels = []
+        self._price_levels: List[Dict[Decimal, Dict[str, float]]] = []
+
+        self._history_bids_df = None
+        self._history_asks_df = None
 
     @property
     def order_book(self) -> OrderBook:
@@ -45,72 +45,58 @@ class NewTradingIntensityIndicator:
         self.calculate_alpha_kappa()
         return self._alpha, self._kappa
 
-    def update_prices(self, price):
-        self._prices.append(price)
-        if len(self._prices) > self.sampling_length:
-            # fmt: off
-            self._prices = self._prices[-self.sampling_length:]
-            # fmt: on
-
-    def update_price_levels(self, price):
-        mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
-        price = price - mid_price
-        self._price_levels.append(price)
+    def update_price_levels(self, order_book_res: Dict[Decimal, Dict[str, float]]):
+        self._price_levels.append(order_book_res)
         if len(self._price_levels) > self.sampling_length:
             # fmt: off
             self._price_levels = self._price_levels[-self.sampling_length:]
             # fmt: on
 
-    def update_volumes(self, volume):
-        if volume == 0:
-            volume = 10**-10
-        self._volumes.append(volume)
-        if len(self._volumes) > self.sampling_length:
-            # fmt: off
-            self._volumes = self._volumes[-self.sampling_length:]
-            # fmt: on
-
-    def get_last_volume(self, price):
-        if len(self._prices) > 0:
-            last_price = self._prices[-1]
-            if last_price > price:
-                res: OrderBookQueryResult = self.order_book.get_volume_for_price(False, price)
-                current_volume = res.result_volume
-            elif last_price < price:
-                res: OrderBookQueryResult = self.order_book.get_volume_for_price(True, price)
-                current_volume = res.result_volume
-            else:
-                current_volume = 0
-        else:
-            current_volume = 0
-        if pd.isna(current_volume):
-            self.logger.warning(f"{self.trading_pair}价格{price}的成交量为NaN")
-        return current_volume
-
     def is_ready(self):
-        if len(self._prices) >= self.sampling_length:
+        if len(self._price_levels) >= self.sampling_length:
             return True
         else:
             return False
 
     def update(self):
-        last_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.LastTrade)
-        last_volume = self.get_last_volume(last_price)
-        self.update_prices(last_price)
-        self.update_volumes(last_volume)
-        self.update_price_levels(last_price)
+        if self._history_asks_df is None and self._history_bids_df is None:
+            # price, amount, update_id
+            self._history_bids_df, self._history_asks_df = self.order_book.snapshot
+            return
+        else:
+            mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
+            bids_df = self._history_bids_df[self._history_bids_df["price"] > mid_price].copy()
+            asks_df = self._history_asks_df[self._history_asks_df["price"] < mid_price].copy()
+            if not bids_df.empty and not asks_df.empty:
+                self.logger.warning("bids_df and asks_df are BOTH NOT empty!")
+
+            if not bids_df.empty:
+                bids_df["price_level"] = (bids_df["price"] - mid_price).astype(str).apply(Decimal)
+                bids_df.set_index("price_level", inplace=True)
+                bids_res: Dict[Decimal, Dict[str, float]] = bids_df[["price", "amount"]].to_dict(orient="index")
+                self.update_price_levels(bids_res)
+            if not asks_df.empty:
+                asks_df["price_level"] = (asks_df["price"] - mid_price).astype(str).apply(Decimal)
+                asks_df.set_index("price_level", inplace=True)
+                asks_res: Dict[Decimal, Dict[str, float]] = asks_df[["price", "amount"]].to_dict(orient="index")
+                self.update_price_levels(asks_res)
+
+            # update df
+            self._history_bids_df, self._history_asks_df = self.order_book.snapshot
 
     def calculate_alpha_kappa(self):
         # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
-        if len(self._price_levels) >= 3:
+        if len(self._price_levels) >= 2:
 
             def exp_func(x, a, b):
                 return a * np.exp(-b * x)
 
-            price_levels = self._price_levels[1:]
-            volumes = self._volumes[1:]
-            combined = list(zip(price_levels, volumes))
-            sorted_combined = sorted(combined, key=lambda x: x[0], reverse=True)
+            combined = defaultdict(float)
+            for level in self._price_levels:
+                for price_lv, details in level.items():
+                    combined[price_lv] += details["amount"]
+            combined_dict = dict(combined)
+            sorted_combined = sorted(combined_dict.items(), key=lambda x: x[0], reverse=True)
             sorted_price_levels, sorted_volumes = zip(*sorted_combined)
 
             price_level_list = np.array(list(sorted_price_levels), dtype=np.float64)
