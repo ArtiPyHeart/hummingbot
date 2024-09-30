@@ -59,6 +59,7 @@ class NewTradingIntensityIndicator:
             return False
 
     def update(self):
+        # 可能需要进一步改进
         if self._history_asks_df is not None and self._history_bids_df is not None:
             mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
             bids_df = self._history_bids_df[self._history_bids_df["price"] >= mid_price].copy()
@@ -231,7 +232,8 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
         # 计算预留价格和最优价差
         self.reservation_price = mid_price - self._q * self.config.risk_factor * vol
         self.optimal_spread = self.config.risk_factor * vol
-        self.optimal_spread += 2 * Decimal(1 + self.config.risk_factor / self._kappa).ln() / self.config.risk_factor
+        if self._kappa > 0:
+            self.optimal_spread += 2 * Decimal(1 + self.config.risk_factor / self._kappa).ln() / self.config.risk_factor
 
         self.optimal_ask = self.reservation_price + self.optimal_spread / Decimal("2")
         self.optimal_bid = self.reservation_price - self.optimal_spread / Decimal("2")
