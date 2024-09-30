@@ -1,5 +1,4 @@
 import logging
-import traceback
 from decimal import Decimal
 from typing import Dict
 
@@ -118,7 +117,7 @@ class NewTradingIntensityIndicator:
                 if self.debug:
                     self.logger.info(f"alpha: {self._alpha}, kappa: {self._kappa}")
             except RuntimeError:
-                self.logger.warning(f"fitting kappa failed: {traceback.format_exc()}")
+                self.logger.warning("fitting Kappa failed, reset to 0")
                 # 拟合失败，重置参数
                 self._alpha = Decimal("0")
                 self._kappa = Decimal("0")
