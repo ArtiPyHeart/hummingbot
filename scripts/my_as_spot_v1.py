@@ -13,6 +13,7 @@ from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.core.data_type.common import OrderType, PriceType, TradeType
 from hummingbot.core.data_type.order_book import OrderBook
+from hummingbot.core.data_type.order_book_query_result import OrderBookQueryResult
 from hummingbot.core.data_type.order_candidate import OrderCandidate
 from hummingbot.core.event.events import OrderFilledEvent
 from hummingbot.strategy.__utils__.trailing_indicators.instant_volatility import InstantVolatilityIndicator
@@ -72,9 +73,11 @@ class NewTradingIntensityIndicator:
         if len(self._prices) > 0:
             last_price = self._prices[-1]
             if last_price > price:
-                current_volume = self.order_book.get_volume_for_price(False, price)
+                res: OrderBookQueryResult = self.order_book.get_volume_for_price(False, price)
+                current_volume = res.result_volume
             elif last_price < price:
-                current_volume = self.order_book.get_volume_for_price(True, price)
+                res: OrderBookQueryResult = self.order_book.get_volume_for_price(True, price)
+                current_volume = res.result_volume
             else:
                 current_volume = 0
         else:
