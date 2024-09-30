@@ -206,7 +206,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
                 self.create_timestamp = self.current_timestamp + self.config.order_refresh_time
         else:
             self.logger().warning(f"波动率指标：{self.is_avg_vol_ready()}")
-            self.logger().warning(f"交易强度指标：{len(self.trading_intensity._volumes) = }")
+            self.logger().warning(f"交易强度指标：{len(self.trading_intensity._price_levels) = }")
 
     def is_avg_vol_ready(self) -> bool:
         return self.avg_vol.is_sampling_buffer_full
