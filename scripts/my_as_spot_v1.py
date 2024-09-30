@@ -59,16 +59,14 @@ class NewTradingIntensityIndicator:
             return False
 
     def update(self):
-        if self._history_asks_df is None or self._history_bids_df is None:
-            # price, amount, update_id
-            self._history_bids_df, self._history_asks_df = self.order_book.snapshot
-            return
-        else:
+        if self._history_asks_df is not None and self._history_bids_df is not None:
             mid_price = self.exchange.get_price_by_type(self.trading_pair, PriceType.MidPrice)
             bids_df = self._history_bids_df[self._history_bids_df["price"] > mid_price].copy()
             asks_df = self._history_asks_df[self._history_asks_df["price"] < mid_price].copy()
             if not bids_df.empty and not asks_df.empty:
                 self.logger.warning("bids_df and asks_df are BOTH NOT empty!")
+            if bids_df.empty and asks_df.empty:
+                self.logger.warning("bids_df and asks_df are BOTH empty!")
 
             if not bids_df.empty:
                 bids_df["price_level"] = (bids_df["price"] - mid_price).astype(str).apply(Decimal)
@@ -81,8 +79,12 @@ class NewTradingIntensityIndicator:
                 asks_res: Dict[Decimal, Dict[str, float]] = asks_df[["price", "amount"]].to_dict(orient="index")
                 self.update_price_levels(asks_res)
 
-            # update df
-            self._history_bids_df, self._history_asks_df = self.order_book.snapshot
+        # price, amount, update_id
+        self._history_bids_df, self._history_asks_df = self.order_book.snapshot
+
+        if self.debug:
+            self.logger.info(f"{type(self._history_bids_df) = }")
+            self.logger.info(f"{type(self._history_asks_df) = }")
 
     def calculate_alpha_kappa(self):
         # 拟合指数衰减函数 λ(p) = α * exp(-κ * p)
