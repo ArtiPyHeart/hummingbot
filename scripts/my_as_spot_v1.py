@@ -164,7 +164,7 @@ class AvellanedaMarketMakingSpot(ScriptStrategyBase):
             exchange=self.current_market,
             trading_pair=self.config.trading_pair,
             sampling_length=self.config.trading_intensity_buffer_size,
-            debug=True,
+            debug=False,
         )
         self.reservation_price = Decimal("0")
         self.optimal_spread = Decimal("0")
