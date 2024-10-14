@@ -131,7 +131,7 @@ class AvellanedaMarketMakingSpotConfig(BaseClientModel):
     trading_pair: str = Field("ETH-USDT", client_data=ClientFieldData(prompt=lambda x: "交易对"))
     order_amount: Decimal = Field(0.05, client_data=ClientFieldData(prompt=lambda x: "订单数量"))
     order_refresh_time: int = Field(60, client_data=ClientFieldData(prompt=lambda x: "订单刷新时间(秒)"))
-    min_spread: Decimal = Field(0, client_data=ClientFieldData(prompt=lambda x: "最小价差"))
+    min_spread: Decimal = Field(0, client_data=ClientFieldData(prompt=lambda x: "最小价差%"))
     risk_factor: Decimal = Field(1, client_data=ClientFieldData(prompt=lambda x: "风险因子(γ)"))
     inventory_target_base_pct: Decimal = Field(50, client_data=ClientFieldData(prompt=lambda x: "目标库存百分比"))
     eta: Decimal = Field(1, ge=0, le=1, client_data=ClientFieldData(prompt=lambda x: "订单尺寸调整系数"))
